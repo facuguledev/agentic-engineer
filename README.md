@@ -36,5 +36,5 @@ agentic-engineer/
 |---|---|---|
 | 01 — backend | Multi-tenant RLS, Drizzle, Neon branching, `PENTEST_ISOLATION` | system prompt ready |
 | 02 — frontend | UI, consumes AGENT_01 contract | system prompt ready |
-| 03 — devops | CI/CD, production apply | pending |
+| 03 — devops | CI/CD, production apply, human-gated release | system prompt ready |
 | 04 — sre | Observability, Sentry, incident response | pending |
