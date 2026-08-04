@@ -165,7 +165,14 @@ describe("0001_init.sql — composite unique constraints (tenant_id, <col>), nev
     const uniqueIndexes = [...sql.matchAll(/CREATE UNIQUE INDEX "([^"]+)" ON "([^"]+)" \(([^)]*)\);/g)];
     expect(uniqueIndexes.length).toBeGreaterThan(0);
 
-    for (const [, indexName, table, cols] of uniqueIndexes) {
+    for (const match of uniqueIndexes) {
+      const [, indexName, table, cols] = match;
+      // Regex has exactly 3 capture groups and only matched entries reach
+      // here, so these are always defined — but noUncheckedIndexedAccess
+      // types match-array elements as possibly undefined, so guard anyway.
+      if (!indexName || !table || cols === undefined) {
+        throw new Error(`unexpected malformed match: ${JSON.stringify(match)}`);
+      }
       if (!TENANT_SCOPED_TABLES.includes(table)) continue; // tenants itself is exempt — see below
       expect(cols, `unique index ${indexName} on tenant-scoped table ${table} must include tenant_id`).toContain(
         '"tenant_id"',
