@@ -185,15 +185,18 @@ jobs:
         with:
           node-version: "22"
 
+      - name: Install infra/neon deps
+        working-directory: infra/neon
+        run: npm install
+
       - name: Create Neon branch for this PR
         id: neon
+        working-directory: infra/neon
         env:
           NEON_API_KEY: ${{ secrets.NEON_API_KEY }} # REPLACE_ME: preview-scoped Neon API key, see docs/ci-cd-required-secrets.md
           NEON_PROJECT_ID: ${{ secrets.NEON_PROJECT_ID }} # REPLACE_ME
-        run: |
-          echo "::notice::TODO — adapt infra/neon/apply_ephemeral.mjs (single ephemeral test branch) into a PR-scoped branch-per-PR script. The prior art creates one throwaway branch per pentest run; this needs a branch keyed on ${{ github.event.pull_request.number }}, named e.g. pr-${{ github.event.pull_request.number }}, that persists for the PR's lifetime and is torn down on PR close (see cleanup job below)."
-          echo "::error::PROVISION_PREVIEW_ENV is not yet implemented — no branch-per-PR script exists at infra/neon/ yet. REPLACE_ME with the real script invocation once written. Blocking until then rather than reporting a false preview URL."
-          exit 1
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: node provision_pr_branch.mjs
 
       - name: Deploy Vercel preview
         env:
@@ -220,5 +223,22 @@ jobs:
     if: github.event.action == 'closed'
     environment: preview
     steps:
-      - run: |
-          echo "::notice::TODO — delete the pr-${{ github.event.pull_request.number }} Neon branch. Depends on the branch-per-PR script above existing first."
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - name: Setup Node
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: "22"
+
+      - name: Install infra/neon deps
+        working-directory: infra/neon
+        run: npm install
+
+      - name: Delete Neon branch for this PR
+        working-directory: infra/neon
+        env:
+          NEON_API_KEY: ${{ secrets.NEON_API_KEY }} # REPLACE_ME
+          NEON_PROJECT_ID: ${{ secrets.NEON_PROJECT_ID }} # REPLACE_ME
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: node teardown_pr_branch.mjs

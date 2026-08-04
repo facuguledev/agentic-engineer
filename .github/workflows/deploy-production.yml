@@ -147,14 +147,23 @@ jobs:
       - name: Build with private Sentry source maps, no public source maps
         working-directory: apps/frontend
         env:
-          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }} # REPLACE_ME: no Sentry project confirmed to exist yet
-          SENTRY_ORG: REPLACE_ME
-          SENTRY_PROJECT: REPLACE_ME
+          # SENTRY_ORG/SENTRY_PROJECT/SENTRY_AUTH_TOKEN: REPLACE_ME — no
+          # Sentry project confirmed to exist yet, see
+          # docs/ci-cd-required-secrets.md item 4. The build itself is real
+          # now (@sentry/nextjs is wired into next.config.mjs,
+          # instrumentation.ts, instrumentation-client.ts,
+          # sentry.{server,edge}.config.ts) and will succeed either way —
+          # withSentryConfig skips the source-map upload with a warning,
+          # not a build failure, if org/project/token aren't all set. What's
+          # guaranteed regardless: productionBrowserSourceMaps is false, so
+          # no public source maps ship no matter what. Upload just won't
+          # happen until real Sentry credentials are set.
+          SENTRY_ORG: ${{ vars.SENTRY_ORG }}
+          SENTRY_PROJECT: ${{ vars.SENTRY_PROJECT }}
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
         run: |
-          echo "::error::Sentry project not yet provisioned/confirmed, and next.config.mjs does not yet wire up @sentry/nextjs or productionBrowserSourceMaps:false. REPLACE_ME on both counts — see docs/ci-cd-required-secrets.md item 4. Blocking rather than shipping either broken source maps or accidentally-public ones."
-          exit 1
-          # Intended shape once wired up:
-          # npm ci && npm run build
+          npm ci
+          npm run build
       - name: Deploy to Vercel production
         id: deploy
         env:
