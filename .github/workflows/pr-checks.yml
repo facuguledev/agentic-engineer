@@ -142,6 +142,10 @@ jobs:
         working-directory: apps/frontend
         run: npm test
 
+      - name: Install Playwright browsers
+        working-directory: apps/frontend
+        run: npx playwright install --with-deps chromium
+
       - name: a11y audit (apps/frontend)
         working-directory: apps/frontend
         run: |
