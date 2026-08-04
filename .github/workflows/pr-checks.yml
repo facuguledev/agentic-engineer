@@ -144,7 +144,12 @@ jobs:
 
       - name: Install Playwright browsers
         working-directory: apps/frontend
-        run: npx playwright install --with-deps chromium
+        # Playwright 1.49.x splits headless Chromium into a separate download
+        # ("chromium-headless-shell") from full Chromium. axe-audit.mjs calls
+        # chromium.launch() with no options, i.e. default headless: true, which
+        # resolves to the shell binary — installing just "chromium" leaves it
+        # missing. See https://github.com/microsoft/playwright/issues/34306.
+        run: npx playwright install --with-deps chromium chromium-headless-shell
 
       - name: a11y audit (apps/frontend)
         working-directory: apps/frontend
