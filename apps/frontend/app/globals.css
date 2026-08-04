@@ -1,0 +1,72 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: light;
+}
+
+html,
+body {
+  background: #ffffff;
+  color: #000000;
+  font-family: theme("fontFamily.grotesk");
+}
+
+/* Zero-radius rule (ADR-0001) is enforced via tailwind.config.ts's
+   borderRadius override, not a blanket `*` reset here — a global
+   `!important` reset would also flatten the circular custom-cursor dot
+   (.custom-cursor, border-radius: 50%), which is a decorative motion
+   element, not an "interactive component" the zero-radius rule targets. */
+
+/* Focus-visible must never be removed, even under the custom-cursor /
+   mix-blend-mode:difference treatment (ADR-0001, item 5). */
+:focus-visible {
+  outline: 2px solid #000000;
+  outline-offset: 2px;
+}
+
+/* Custom cursor is scoped to fine-pointer devices only (ADR-0001, item 5);
+   touch devices keep the system default cursor. */
+@media (pointer: fine) {
+  .cursor-enabled {
+    cursor: none;
+  }
+}
+
+.custom-cursor {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: #ffffff;
+  mix-blend-mode: difference;
+  pointer-events: none;
+  z-index: 9999;
+  transform: translate(-50%, -50%);
+  will-change: transform;
+}
+
+/* prefers-reduced-motion: disable GSAP-driven entrance/stagger transforms
+   and the lerp cursor; a visual pivot does not waive accessibility
+   compliance (ADR-0001, item 4). */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  .custom-cursor {
+    display: none;
+  }
+
+  .cursor-enabled {
+    cursor: auto;
+  }
+}
