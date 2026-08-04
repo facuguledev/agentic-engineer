@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "db:generate": "drizzle-kit generate",
-    "db:studio": "drizzle-kit studio"
+    "db:studio": "drizzle-kit studio",
+    "test": "vitest run"
   },
   "dependencies": {
     "drizzle-orm": "0.45.2",
@@ -15,6 +16,7 @@
   "devDependencies": {
     "drizzle-kit": "0.31.10",
     "@types/pg": "8.11.10",
-    "typescript": "5.7.3"
+    "typescript": "5.7.3",
+    "vitest": "2.1.9"
   }
 }

@@ -5,6 +5,11 @@ node_modules/
 # match a symlink. Could not be deleted from disk (OneDrive lock); excluded explicitly
 # so it can never be committed. Safe to delete manually via File Explorer.
 infra/neon/node_modules
+# npm install leftovers from a locked/interrupted install under the OneDrive
+# mount (same class of issue as above) — cannot be deleted from disk here,
+# excluded explicitly.
+apps/backend/node_modules.old/
+apps/backend/vitest.config.ts.timestamp-*.mjs
 dist/
 build/
 .env
