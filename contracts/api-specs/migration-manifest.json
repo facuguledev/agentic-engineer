@@ -1,0 +1,9 @@
+{
+  "migrationVersion": "0001_init.sql",
+  "migrationPath": "apps/backend/drizzle/0001_init.sql",
+  "checksumAlgorithm": "sha256",
+  "checksum": "a3d8e7c27201c77b334213894c29b27dcb900d71c9014caa834caa974ecdd5fc",
+  "emittedBy": "AGENT_01",
+  "emittedAt": "2026-08-04T00:00:00Z",
+  "note": "Backfilled: AGENT_01's original EMIT_CONTRACT run did not produce this manifest, per agents/agent-03-devops/system-prompt.md §MIGRATION INTEGRITY which requires it. Computed directly against 0001_init.sql as committed post-PENTEST_ISOLATION pass; the file has not been touched since. AGENT_03 must treat this as the independently-recorded value for VALIDATE_MIGRATION_INTEGRITY — do not regenerate it from the PR's copy of the migration."
+}
