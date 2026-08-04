@@ -1,6 +1,10 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
+// First PR opened against this repo touching apps/frontend, specifically to
+// exercise .github/workflows/pr-checks.yml end-to-end on a real GitHub
+// Actions runner for the first time (validate-migration-integrity +
+// ci-checks). No functional change below this comment.
 const dirname = path.dirname(fileURLToPath(import.meta.url));
 
 /** @type {import('next').NextConfig} */
