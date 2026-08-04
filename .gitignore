@@ -1,4 +1,10 @@
 node_modules/
+**/node_modules
+# Dangling symlink left by an AGENT_01 sandbox workaround (infra/neon/node_modules
+# -> /tmp/scratch-pg/node_modules); the generic node_modules/ pattern above does not
+# match a symlink. Could not be deleted from disk (OneDrive lock); excluded explicitly
+# so it can never be committed. Safe to delete manually via File Explorer.
+infra/neon/node_modules
 dist/
 build/
 .env
