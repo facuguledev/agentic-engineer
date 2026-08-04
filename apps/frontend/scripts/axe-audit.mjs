@@ -103,7 +103,12 @@ async function main() {
     await waitForServer(BASE_URL);
 
     const browser = await chromium.launch();
-    const page = await browser.newPage();
+    // @axe-core/playwright v4.3.0+ requires the page to come from an
+    // explicit context — AxeBuilder.analyze() opens a new window at the
+    // end of a run, which browser.newPage()'s implicit context doesn't
+    // support. See https://github.com/dequelabs/axe-core-npm/blob/develop/packages/playwright/error-handling.md
+    const context = await browser.newContext();
+    const page = await context.newPage();
 
     for (const route of ROUTES) {
       console.log(`\n=== Auditing ${route.label} ===`);
