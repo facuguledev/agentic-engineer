@@ -200,7 +200,11 @@ jobs:
 
       - name: Deploy Vercel preview
         id: vercel
-        working-directory: apps/frontend
+        # No working-directory here on purpose: the Vercel project's own
+        # Root Directory setting (apps/frontend) already tells the CLI
+        # where the app lives, resolved from the repo root. cd'ing into
+        # apps/frontend ourselves on top of that doubles the path
+        # (apps/frontend/apps/frontend) and breaks `vercel build`.
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
           VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
