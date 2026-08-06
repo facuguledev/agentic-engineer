@@ -139,6 +139,7 @@ jobs:
     environment: production
     outputs:
       vercel-deployment-id: ${{ steps.deploy.outputs.deployment_id }}
+      vercel-deployment-url: ${{ steps.deploy.outputs.url }}
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
       - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
@@ -166,18 +167,18 @@ jobs:
           npm run build
       - name: Deploy to Vercel production
         id: deploy
+        working-directory: apps/frontend
         env:
-          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }} # REPLACE_ME (or rely purely on OIDC once that trust relationship is confirmed live)
-          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }} # REPLACE_ME
-          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }} # REPLACE_ME
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
         run: |
-          echo "::error::Vercel project does not exist yet. REPLACE_ME once provisioned."
-          exit 1
-          # Intended shape:
-          # npx vercel@REPLACE_ME_PIN_VERSION pull --yes --environment=production --token="$VERCEL_TOKEN"
-          # npx vercel@REPLACE_ME_PIN_VERSION build --prod --token="$VERCEL_TOKEN"
-          # DEPLOYMENT_URL=$(npx vercel@REPLACE_ME_PIN_VERSION deploy --prebuilt --prod --token="$VERCEL_TOKEN")
-          # echo "deployment_id=$(basename "$DEPLOYMENT_URL")" >> "$GITHUB_OUTPUT"
+          set -euo pipefail
+          npx vercel@58.7.1 pull --yes --environment=production --token="$VERCEL_TOKEN"
+          npx vercel@58.7.1 build --prod --token="$VERCEL_TOKEN"
+          DEPLOYMENT_URL=$(npx vercel@58.7.1 deploy --prebuilt --prod --token="$VERCEL_TOKEN")
+          echo "url=$DEPLOYMENT_URL" >> "$GITHUB_OUTPUT"
+          echo "deployment_id=$(basename "$DEPLOYMENT_URL")" >> "$GITHUB_OUTPUT"
 
   # ---------------------------------------------------------------------
   # 7. VERIFY_HEALTH — failure triggers artifact rollback (never automatic
@@ -191,15 +192,22 @@ jobs:
     steps:
       - name: Health-check endpoint
         env:
-          PROD_URL: REPLACE_ME # e.g. https://app.example.com — not yet known, no production domain provisioned
+          PROD_URL: ${{ needs.deploy-artifact.outputs.vercel-deployment-url }}
         run: |
-          echo "::error::PROD_URL is a placeholder — no production domain exists yet. REPLACE_ME."
-          exit 1
-          # Intended shape:
-          # curl -sf --max-time 10 "$PROD_URL/api/health" || { echo "::error::Health check failed"; exit 1; }
+          set -euo pipefail
+          if [ -z "$PROD_URL" ]; then
+            echo "::error::deploy-artifact produced no deployment URL — cannot health-check. Blocking."
+            exit 1
+          fi
+          # KNOWN GAP: apps/frontend has no /api/health route yet (no
+          # backend exists to check the health of either — see the
+          # provision-preview-env comment in pr-checks.yml for the same
+          # underlying gap). This will legitimately fail until that route
+          # is added, which is correct: a real failure, not a fake stub.
+          curl -sf --max-time 10 "$PROD_URL/api/health"
       - name: Authenticated smoke path (login + one tenant-scoped read)
         run: |
-          echo "::error::No smoke-test credentials/fixture tenant exist yet. REPLACE_ME with a dedicated read-only smoke-test account once one is provisioned — never reuse a real tenant's credentials for this."
+          echo "::error::No smoke-test credentials/fixture tenant exist yet, and no auth exists in the app to test against (no backend deployed — see DEPLOY_ARTIFACT's known-gap comment). REPLACE_ME with a dedicated read-only smoke-test account once both a real backend and auth exist."
           exit 1
 
   rollback-on-failed-health:
@@ -209,13 +217,20 @@ jobs:
     if: failure() && needs.deploy-artifact.result == 'success'
     environment: production
     steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
       - name: Repoint traffic to last known-healthy Vercel deployment
+        working-directory: apps/frontend
         env:
-          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }} # REPLACE_ME
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
         run: |
+          set -euo pipefail
           echo "::notice::Per ROLLBACK POLICY: automated rollback is frontend/artifact-only. If verify-health failed for schema-related reasons, the migration itself is NOT reverted here — that requires a human-authored forward-fix migration through the normal pipeline."
-          echo "::error::REPLACE_ME with actual Vercel rollback call (vercel rollback <last-good-deployment-url> --token=\"$VERCEL_TOKEN\") once Vercel project + prior deployment history exist."
-          exit 1
+          # No target argument: `vercel rollback` with no URL rolls back to
+          # the most recent prior production deployment, which is exactly
+          # "last known-healthy" as long as every deploy that reached this
+          # point already passed its own verify-health (true by induction —
+          # this job only runs after the current deploy's own check failed).
+          npx vercel@58.7.1 rollback --token="$VERCEL_TOKEN"
 
   # ---------------------------------------------------------------------
   # 8. EMIT_DEPLOY_MANIFEST

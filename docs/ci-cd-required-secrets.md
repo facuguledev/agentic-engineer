@@ -1,73 +1,73 @@
-# CI/CD prerequisites — status as of this authoring pass
+# CI/CD prerequisites — status
 
-Authored by AGENT_03 against the committed state of `apps/backend`, `apps/frontend`,
-and `contracts/api-specs` (commits `451c3be`, `cc47276`, `74be6c2`). Nothing below has
-been provisioned live. `.github/workflows/pr-checks.yml` and
+Originally authored by AGENT_03 against the committed state of `apps/backend`,
+`apps/frontend`, and `contracts/api-specs` (commits `451c3be`, `cc47276`, `74be6c2`).
+Updated as pieces have gone live. `.github/workflows/pr-checks.yml` and
 `.github/workflows/deploy-production.yml` are written to fail loudly (`exit 1` with an
-`::error::` message) at every point that depends on one of these, rather than silently
-no-op or fake success.
+`::error::` message) at every point that still depends on something unresolved, rather
+than silently no-op or fake success.
 
-## Code gaps found during this pass (not infra — fix in-repo first)
+## Code gaps found along the way
 
-1. **`apps/frontend/package.json` has `"a11y": "node scripts/axe-audit.mjs"` but
-   `apps/frontend/scripts/axe-audit.mjs` does not exist.** `@axe-core/playwright` and
-   `playwright` are devDependencies, so the intent is real, the script just was never
-   written/committed. `pr-checks.yml` blocks on this by name instead of skipping it.
-2. **No `test` script in either `apps/backend/package.json` or
-   `apps/frontend/package.json`.** Both workflows block on this explicitly. Either add
-   a real test suite + script, or make an explicit, documented decision that none
-   exists yet — but that decision shouldn't be made silently inside a CI file.
-3. **No production migration-apply script.** `infra/neon/apply_ephemeral.mjs`
-   explicitly never touches production by design (see its own header comment) — a
-   separate `apply_production.mjs` needs to be written, scoped to applying exactly one
-   checksum-verified migration, never drop/reset.
-4. ~~**No PR-scoped (branch-per-PR) Neon provisioning script.**~~ **Fixed.**
-   `infra/neon/provision_pr_branch.mjs` + `teardown_pr_branch.mjs` now exist, wired into
-   `pr-checks.yml`'s `provision-preview-env`/`cleanup-preview-env` jobs. Verified:
-   argument/env-var guards tested directly, and the Neon API call path confirmed working
-   (a `curl` request with a fake key got a real `401` from `console.neon.tech`) — the
-   only thing untested end-to-end is a real branch create/apply/seed cycle, which needs
-   a real `NEON_API_KEY`.
-5. ~~**No Sentry integration wired into `apps/frontend/next.config.mjs`**~~ **Fixed.**
-   `@sentry/nextjs` added, `next.config.mjs` wrapped with `withSentryConfig`,
-   `productionBrowserSourceMaps: false` set explicitly, plus
-   `instrumentation.ts`/`instrumentation-client.ts`/`sentry.server.config.ts`/
-   `sentry.edge.config.ts`/`app/global-error.tsx` all added per Sentry's current Next.js
-   15 App Router manual-setup docs. Verified with a real `npm install` + `next build` in
-   a clean copy: build succeeds, `instrumentation.js` and Sentry code are present in the
-   compiled output, and no `.map` files ship under `.next/static` (confirms no public
-   source maps). Still needs a real Sentry project/org/project slug/auth token before
-   maps actually upload anywhere — until then the build just skips the upload with a
-   warning, which is the documented, safe default behavior.
+1. ~~**`apps/frontend/package.json` had `"a11y": "node scripts/axe-audit.mjs"` but the
+   script didn't exist.**~~ **Fixed.** Script exists, passes on a real GitHub Actions
+   runner as of commit `d328a2c` on `ci/validate-pr-checks` (after also fixing a missing
+   Playwright `chromium-headless-shell` binary and an `@axe-core/playwright` v4.3+ API
+   change — see that branch's commit history for both).
+2. ~~**No `test` script in either package.json.**~~ **Fixed.** Both have real `vitest`
+   suites now; confirmed passing on a real runner.
+3. **No production migration-apply script.** Still open. `infra/neon/apply_ephemeral.mjs`
+   explicitly never touches production by design — a separate `apply_production.mjs`
+   needs writing, scoped to applying exactly one checksum-verified migration, never
+   drop/reset. Blocks `deploy-production.yml`'s `deploy-migration` job.
+4. ~~**No PR-scoped Neon provisioning script.**~~ **Fixed.**
+   `infra/neon/provision_pr_branch.mjs` + `teardown_pr_branch.mjs`, wired into
+   `pr-checks.yml`. Verified: dependency install, all env-var/argument guards, and the
+   Neon API call path (confirmed via `curl` getting a real `401` from a fake key — proves
+   the endpoint/auth format, since this dev sandbox's proxy setup blocks Node's own
+   `fetch()` from completing the call; not an issue on a GitHub-hosted runner).
+5. ~~**No Sentry integration.**~~ **Fixed.** `@sentry/nextjs` wired into
+   `next.config.mjs` + instrumentation files, `productionBrowserSourceMaps: false` set
+   explicitly. Verified with a real clean-copy `npm install` + `next build`: succeeds,
+   Sentry code present in compiled output, zero `.map` files under `.next/static`.
+6. **No `/api/health` route in `apps/frontend`.** New gap, found while wiring
+   `verify-health`. There's no backend deployed anywhere (see #7), so there's nothing to
+   health-check yet even on the frontend's own terms — `verify-health`'s health-check
+   step now points at the real deployed URL but will legitimately fail with a 404 until
+   this route exists. That's intentional: a real failure beats a hardcoded stub.
+7. **No backend API deployed anywhere.** `apps/backend` is schema/migrations only (no
+   HTTP server, no route handlers) — `NEXT_PUBLIC_API_BASE_URL` has nothing real to point
+   at. Consequence: the Neon branch `provision_pr_branch.mjs` creates for each PR preview
+   is provisioned but currently unused by the deployed frontend (nothing to hand its
+   connection string to), and `verify-health`'s authenticated smoke-path step can't be
+   implemented until both a backend and auth exist. Preview/production deploys still work
+   as UI/layout/a11y review; expect the app's own data-loading error states to render.
 
-## External prerequisites (require you to act, one at a time)
+## External prerequisites
 
-Request each credential only at the point of use — not batched. None of these are
-requested yet; this list is what to expect being asked for, and why.
+| # | What | Status |
+|---|------|--------|
+| 1 | `production` GitHub Environment, required reviewers | **Done.** Created via repo Settings UI (auto-created empty by a prior workflow run, then configured with `facuguledev` as required reviewer). `preview` Environment also exists, deliberately unprotected — preview deploys must run automatically for a PR reviewer to have something to look at. |
+| 2 | Neon API key (preview-scoped) + `NEON_PROJECT_ID` | **Not yet provided.** Script side is done; still need real Neon credentials in the `preview` Environment's secrets. |
+| 3 | Neon API key (production-scoped) | **Not yet provided.** Also blocked on gap #3 above (`apply_production.mjs` doesn't exist yet). |
+| 4 | Vercel project, `VERCEL_ORG_ID`, `VERCEL_PROJECT_ID`, `VERCEL_TOKEN` | **Done.** Project `agentic-engineer-frontend` created (Root Directory `apps/frontend`), `VERCEL_ORG_ID`/`VERCEL_PROJECT_ID` known, token generated and added as a GitHub secret. Both workflows' Vercel deploy steps are real now (`npx vercel@58.7.1`, pinned), not stubs. |
+| 5 | Sentry project, `SENTRY_AUTH_TOKEN`, `SENTRY_ORG`/`SENTRY_PROJECT` | **Not yet provided.** In-repo wiring is done; build succeeds without these, source maps just won't upload until they're real. |
+| 6 | Production health-check route | **Blocked on gap #6** — needs `/api/health` added to `apps/frontend`, not an external prerequisite. |
+| 7 | Dedicated read-only smoke-test account/tenant | **Blocked on gap #7** — no backend/auth exists yet to create an account against. |
+| 8 | Bot identity email for `git config user.email` in `emit-deploy-manifest` | **Not yet provided.** Still `REPLACE_ME@example.com`. |
 
-| # | What | Needed for | Notes |
-|---|------|------------|-------|
-| 1 | GitHub fine-grained PAT (`Administration:write`, `Environments:write`) OR do it by hand in Settings → Environments | Creating the `production` GitHub Environment + required-reviewers rule | This is a one-time repo setting change, deliberately **not** done via workflow YAML — the system prompt requires environment-protection changes to be a standalone human-reviewed step, never bundled into a deploy PR. Doing it by hand in the GitHub UI is arguably simpler and avoids provisioning a PAT at all. |
-| 2 | Neon API key (preview-scoped) + `NEON_PROJECT_ID` | `pr-checks.yml` → `provision-preview-env` | Script side is done (`infra/neon/provision_pr_branch.mjs`). Store as repo secrets `NEON_API_KEY`, `NEON_PROJECT_ID` under a `preview` GitHub Environment, distinct from prod. |
-| 3 | Neon API key (production-scoped, minimally permissioned) | `deploy-production.yml` → `deploy-migration` | Store as `NEON_PROD_API_KEY` under the `production` Environment. Must be a different key than #2 — least privilege. Still needs `apply_production.mjs` written (gap #3 above, still open). |
-| 4 | Vercel: project created, `VERCEL_ORG_ID`, `VERCEL_PROJECT_ID`, and either GitHub Actions OIDC trust configured (preferred, needs `id-token: write`, already set in both workflow files) or a `VERCEL_TOKEN` fallback | Preview + production deploys in both workflows | No Vercel project exists yet per this pass — needs creating before any of this can go live. |
-| 5 | Sentry: existing project or one created, `SENTRY_AUTH_TOKEN`, org slug (`SENTRY_ORG` repo variable), project slug (`SENTRY_PROJECT` repo variable) | `deploy-production.yml` → `deploy-artifact` build step | In-repo wiring is done (gap #5 above, fixed). Build succeeds without these set; source maps just won't upload until they're real. |
-| 6 | Production domain / health-check URL | `deploy-production.yml` → `verify-health` | Currently a `REPLACE_ME` placeholder — depends on #4 existing first. |
-| 7 | A dedicated read-only smoke-test account/tenant | `verify-health`'s authenticated smoke path | Must not reuse a real tenant's credentials. |
-| 8 | Bot identity email for `git config user.email` | `emit-deploy-manifest`'s commit step | Currently `REPLACE_ME@example.com` — pick something that won't misattribute authorship, per the system prompt's explicit rule. |
+## What's real now vs. still a stub
 
-## Network reachability
+**Real, verified on a live GitHub Actions run:** migration checksum validation, full CI
+suite (lint/typecheck/test/a11y) for both apps, Neon branch-per-PR scripts (code-verified,
+not yet run against real credentials), Sentry/Next.js build wiring, Vercel preview and
+production deploy steps, PR-comment-with-preview-URL, production rollback (`vercel
+rollback`, no target arg — rolls back to the most recent prior production deployment).
 
-Not yet checked from a CI runner context. Before requesting any of the above, worth
-confirming `api.github.com`, `vercel.com`, `api.vercel.com`, `sentry.io` are reachable
-from wherever the provisioning calls will actually run (this differs from reachability
-in this chat session, which isn't representative of a GitHub-hosted runner).
+**Still `exit 1` stubs, blocking on purpose:** `deploy-migration` (no
+`apply_production.mjs`), `verify-health`'s authenticated smoke path (no backend/auth),
+`emit-deploy-manifest`'s commit step (no real bot email set).
 
-## What's deliberately NOT done in this pass
-
-- No secrets requested or stored.
-- No GitHub Environment created.
-- No Vercel/Neon/Sentry project created.
-- No PR opened. Workflow files are sitting in the working tree, uncommitted — review
-  them first, since several jobs are stubs by design (`exit 1` placeholders) and
-  wouldn't pass CI as-is even after secrets are filled in.
+**Known gap, not yet a stub because nothing references it as blocking:** `/api/health`
+doesn't exist, so `verify-health`'s health-check step will run for real and fail with a
+404 rather than being hand-blocked.

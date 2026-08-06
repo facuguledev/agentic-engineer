@@ -199,23 +199,45 @@ jobs:
         run: node provision_pr_branch.mjs
 
       - name: Deploy Vercel preview
+        id: vercel
+        working-directory: apps/frontend
         env:
-          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }} # REPLACE_ME: only if OIDC federation (id-token: write) isn't wired up yet
-          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }} # REPLACE_ME
-          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }} # REPLACE_ME
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
         run: |
-          echo "::error::VERCEL_ORG_ID / VERCEL_PROJECT_ID / Vercel project itself do not exist yet (no live provisioning has happened). REPLACE_ME once the Vercel project is created and its OIDC trust relationship (or VERCEL_TOKEN fallback) is confirmed live."
-          exit 1
-          # Once provisioned, intended shape:
-          # npx vercel@REPLACE_ME_PIN_VERSION pull --yes --environment=preview --token="$VERCEL_TOKEN"
-          # npx vercel@REPLACE_ME_PIN_VERSION build --token="$VERCEL_TOKEN"
-          # npx vercel@REPLACE_ME_PIN_VERSION deploy --prebuilt --token="$VERCEL_TOKEN" \
-          #   --env DATABASE_URL="${{ steps.neon.outputs.connection_uri }}" > preview-url.txt
+          set -euo pipefail
+          # KNOWN GAP: no DATABASE_URL / backend API wiring here on purpose.
+          # apps/backend has no deployed API (schema/migrations only, no HTTP
+          # server) — the frontend's NEXT_PUBLIC_API_BASE_URL has nothing
+          # real to point at yet. This preview deploy is UI/a11y/layout
+          # review only; expect the app's own error states ("Failed to load
+          # tasks", etc.) to render, same limitation apps/frontend/scripts/
+          # axe-audit.mjs already documents for the same reason. The Neon
+          # branch created in the previous step (steps.neon.outputs.*) is
+          # provisioned but intentionally unused here until a real backend
+          # exists to hand its connection string to.
+          npx vercel@58.7.1 pull --yes --environment=preview --token="$VERCEL_TOKEN"
+          npx vercel@58.7.1 build --token="$VERCEL_TOKEN"
+          DEPLOYMENT_URL=$(npx vercel@58.7.1 deploy --prebuilt --token="$VERCEL_TOKEN")
+          echo "url=$DEPLOYMENT_URL" >> "$GITHUB_OUTPUT"
 
       - name: Comment preview URL on PR
-        if: false # enable once the two steps above are real
-        run: |
-          echo "TODO - post preview-url.txt as a PR comment for the human reviewer to exercise before approving"
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          script: |
+            const url = "${{ steps.vercel.outputs.url }}";
+            const body = [
+              "**Preview deployment:** " + url,
+              "",
+              "_No backend API is deployed yet — expect data-loading error states in this preview. UI/layout/a11y only._",
+            ].join("\n");
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body,
+            });
 
   cleanup-preview-env:
     name: Tear down Neon preview branch on PR close
