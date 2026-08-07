@@ -112,16 +112,22 @@ jobs:
     runs-on: ubuntu-latest
     needs: [validate-migration-integrity, ci-checks]
     if: needs.validate-migration-integrity.outputs.migration-changed == 'true'
-    environment: production # REPLACE_ME: this Environment + its required-reviewers rule must exist in repo Settings before this job can ever run — it does not exist yet.
+    environment: production # Exists with required-reviewers configured — this job cannot start until a reviewer approves it in the GitHub UI.
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: "22"
+      - name: Install infra/neon deps
+        working-directory: infra/neon
+        run: npm install
       - name: Apply migration via Neon
+        working-directory: infra/neon
         env:
           NEON_API_KEY: ${{ secrets.NEON_PROD_API_KEY }} # REPLACE_ME: production-scoped, minimally-permissioned, never the same key used for preview branches
           NEON_PROJECT_ID: ${{ secrets.NEON_PROJECT_ID }} # REPLACE_ME
-        run: |
-          echo "::error::No production migration-apply script exists yet (infra/neon/apply_ephemeral.mjs explicitly never touches production — by design, per its own header comment). REPLACE_ME with a dedicated apply_production.mjs before this can run, written to only ever apply the single checksum-verified migration file, never drop/reset."
-          exit 1
+          NEON_PROD_BRANCH_ID: ${{ secrets.NEON_PROD_BRANCH_ID }} # REPLACE_ME: explicit branch ID, never looked up by name — see apply_production.mjs's own guard
+        run: node apply_production.mjs
 
   # ---------------------------------------------------------------------
   # 6. DEPLOY_ARTIFACT
@@ -139,6 +145,7 @@ jobs:
     environment: production
     outputs:
       vercel-deployment-id: ${{ steps.deploy.outputs.deployment_id }}
+      vercel-deployment-url: ${{ steps.deploy.outputs.url }}
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
       - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
@@ -147,28 +154,40 @@ jobs:
       - name: Build with private Sentry source maps, no public source maps
         working-directory: apps/frontend
         env:
-          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }} # REPLACE_ME: no Sentry project confirmed to exist yet
-          SENTRY_ORG: REPLACE_ME
-          SENTRY_PROJECT: REPLACE_ME
+          # SENTRY_ORG/SENTRY_PROJECT/SENTRY_AUTH_TOKEN: REPLACE_ME — no
+          # Sentry project confirmed to exist yet, see
+          # docs/ci-cd-required-secrets.md item 4. The build itself is real
+          # now (@sentry/nextjs is wired into next.config.mjs,
+          # instrumentation.ts, instrumentation-client.ts,
+          # sentry.{server,edge}.config.ts) and will succeed either way —
+          # withSentryConfig skips the source-map upload with a warning,
+          # not a build failure, if org/project/token aren't all set. What's
+          # guaranteed regardless: productionBrowserSourceMaps is false, so
+          # no public source maps ship no matter what. Upload just won't
+          # happen until real Sentry credentials are set.
+          SENTRY_ORG: ${{ vars.SENTRY_ORG }}
+          SENTRY_PROJECT: ${{ vars.SENTRY_PROJECT }}
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
         run: |
-          echo "::error::Sentry project not yet provisioned/confirmed, and next.config.mjs does not yet wire up @sentry/nextjs or productionBrowserSourceMaps:false. REPLACE_ME on both counts — see docs/ci-cd-required-secrets.md item 4. Blocking rather than shipping either broken source maps or accidentally-public ones."
-          exit 1
-          # Intended shape once wired up:
-          # npm ci && npm run build
+          npm ci
+          npm run build
       - name: Deploy to Vercel production
         id: deploy
+        # No working-directory: the Vercel project's Root Directory
+        # (apps/frontend) is resolved from the repo root by the CLI itself —
+        # see the matching comment in pr-checks.yml for the doubled-path bug
+        # this avoids.
         env:
-          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }} # REPLACE_ME (or rely purely on OIDC once that trust relationship is confirmed live)
-          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }} # REPLACE_ME
-          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }} # REPLACE_ME
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
         run: |
-          echo "::error::Vercel project does not exist yet. REPLACE_ME once provisioned."
-          exit 1
-          # Intended shape:
-          # npx vercel@REPLACE_ME_PIN_VERSION pull --yes --environment=production --token="$VERCEL_TOKEN"
-          # npx vercel@REPLACE_ME_PIN_VERSION build --prod --token="$VERCEL_TOKEN"
-          # DEPLOYMENT_URL=$(npx vercel@REPLACE_ME_PIN_VERSION deploy --prebuilt --prod --token="$VERCEL_TOKEN")
-          # echo "deployment_id=$(basename "$DEPLOYMENT_URL")" >> "$GITHUB_OUTPUT"
+          set -euo pipefail
+          npx vercel@58.7.1 pull --yes --environment=production --token="$VERCEL_TOKEN"
+          npx vercel@58.7.1 build --prod --token="$VERCEL_TOKEN"
+          DEPLOYMENT_URL=$(npx vercel@58.7.1 deploy --prebuilt --prod --token="$VERCEL_TOKEN")
+          echo "url=$DEPLOYMENT_URL" >> "$GITHUB_OUTPUT"
+          echo "deployment_id=$(basename "$DEPLOYMENT_URL")" >> "$GITHUB_OUTPUT"
 
   # ---------------------------------------------------------------------
   # 7. VERIFY_HEALTH — failure triggers artifact rollback (never automatic
@@ -182,15 +201,22 @@ jobs:
     steps:
       - name: Health-check endpoint
         env:
-          PROD_URL: REPLACE_ME # e.g. https://app.example.com — not yet known, no production domain provisioned
+          PROD_URL: ${{ needs.deploy-artifact.outputs.vercel-deployment-url }}
         run: |
-          echo "::error::PROD_URL is a placeholder — no production domain exists yet. REPLACE_ME."
-          exit 1
-          # Intended shape:
-          # curl -sf --max-time 10 "$PROD_URL/api/health" || { echo "::error::Health check failed"; exit 1; }
+          set -euo pipefail
+          if [ -z "$PROD_URL" ]; then
+            echo "::error::deploy-artifact produced no deployment URL — cannot health-check. Blocking."
+            exit 1
+          fi
+          # KNOWN GAP: apps/frontend has no /api/health route yet (no
+          # backend exists to check the health of either — see the
+          # provision-preview-env comment in pr-checks.yml for the same
+          # underlying gap). This will legitimately fail until that route
+          # is added, which is correct: a real failure, not a fake stub.
+          curl -sf --max-time 10 "$PROD_URL/api/health"
       - name: Authenticated smoke path (login + one tenant-scoped read)
         run: |
-          echo "::error::No smoke-test credentials/fixture tenant exist yet. REPLACE_ME with a dedicated read-only smoke-test account once one is provisioned — never reuse a real tenant's credentials for this."
+          echo "::error::No smoke-test credentials/fixture tenant exist yet, and no auth exists in the app to test against (no backend deployed — see DEPLOY_ARTIFACT's known-gap comment). REPLACE_ME with a dedicated read-only smoke-test account once both a real backend and auth exist."
           exit 1
 
   rollback-on-failed-health:
@@ -200,13 +226,22 @@ jobs:
     if: failure() && needs.deploy-artifact.result == 'success'
     environment: production
     steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
       - name: Repoint traffic to last known-healthy Vercel deployment
+        # Same reasoning as the deploy steps: no working-directory, the CLI
+        # resolves the project via VERCEL_ORG_ID/VERCEL_PROJECT_ID directly,
+        # it doesn't need local file access for a pure rollback.
         env:
-          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }} # REPLACE_ME
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
         run: |
+          set -euo pipefail
           echo "::notice::Per ROLLBACK POLICY: automated rollback is frontend/artifact-only. If verify-health failed for schema-related reasons, the migration itself is NOT reverted here — that requires a human-authored forward-fix migration through the normal pipeline."
-          echo "::error::REPLACE_ME with actual Vercel rollback call (vercel rollback <last-good-deployment-url> --token=\"$VERCEL_TOKEN\") once Vercel project + prior deployment history exist."
-          exit 1
+          # No target argument: `vercel rollback` with no URL rolls back to
+          # the most recent prior production deployment, which is exactly
+          # "last known-healthy" as long as every deploy that reached this
+          # point already passed its own verify-health (true by induction —
+          # this job only runs after the current deploy's own check failed).
+          npx vercel@58.7.1 rollback --token="$VERCEL_TOKEN"
 
   # ---------------------------------------------------------------------
   # 8. EMIT_DEPLOY_MANIFEST
@@ -242,7 +277,7 @@ jobs:
       - name: Commit manifest
         run: |
           git config user.name "agent-03-devops[bot]"
-          git config user.email "REPLACE_ME@example.com" # per system-prompt.md: never left at a default that could misattribute authorship — needs a real bot identity/email before this runs live
+          git config user.email "facundoguledjian@gmail.com" # bot identity for this repo's deploy-manifest commits, set by the repo owner
           git add contracts/deploy-manifests/
           git commit -m "release: emit deploy manifest for ${{ github.sha }}"
           git push

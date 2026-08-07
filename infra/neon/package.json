@@ -1,0 +1,10 @@
+{
+  "name": "@agentic-engineer/neon-tooling",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "description": "Neon branch provisioning scripts used by CI (pr-checks.yml, deploy-production.yml). Runs on GitHub-hosted runners with normal outbound network access — no proxy/SOCKS workarounds needed here, unlike apply_ephemeral.mjs which was written for a sandboxed dev environment.",
+  "dependencies": {
+    "pg": "8.13.1"
+  }
+}
