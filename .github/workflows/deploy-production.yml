@@ -277,7 +277,7 @@ jobs:
       - name: Commit manifest
         run: |
           git config user.name "agent-03-devops[bot]"
-          git config user.email "REPLACE_ME@example.com" # per system-prompt.md: never left at a default that could misattribute authorship — needs a real bot identity/email before this runs live
+          git config user.email "facundoguledjian@gmail.com" # bot identity for this repo's deploy-manifest commits, set by the repo owner
           git add contracts/deploy-manifests/
           git commit -m "release: emit deploy manifest for ${{ github.sha }}"
           git push
