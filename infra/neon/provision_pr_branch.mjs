@@ -119,6 +119,27 @@ async function runAsOwner(uri, sqlText) {
   }
 }
 
+// New branches fork (copy-on-write) from the project's default branch, which
+// used to be empty but now — since the backend build landed and production
+// was bootstrapped with real schema — already carries the full schema, all
+// roles, and real seed data at fork time. Re-running 0001_init.sql's raw
+// CREATE TYPE/CREATE TABLE/CREATE POLICY statements against a branch that
+// already has them fails hard (`type "user_role" already exists`, 42710).
+// This checks which case we're in so the same script keeps working whether
+// the parent branch is empty (fresh project) or already bootstrapped
+// (current reality), without needing a second script to maintain.
+async function schemaAlreadyPresent(uri) {
+  const client = await connectClient(uri);
+  try {
+    const { rows } = await client.query(
+      `SELECT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'user_role') AS present`,
+    );
+    return rows[0].present === true;
+  } finally {
+    await client.end();
+  }
+}
+
 async function main() {
   assertPrBranchName(BRANCH_NAME);
 
@@ -146,20 +167,40 @@ async function main() {
 
     // roles.sql before 0001_init.sql — the migration's CREATE POLICY
     // statements grant to app_user, which must already exist. Same fix
-    // AGENT_01 discovered the hard way in apply_ephemeral.mjs.
+    // AGENT_01 discovered the hard way in apply_ephemeral.mjs. This is safe
+    // to run unconditionally either way: the CREATE ROLE is itself guarded
+    // by an IF NOT EXISTS check, and every GRANT/ALTER statement in it is
+    // idempotent.
     console.log("==> Applying roles.sql (owner role)");
     const appUserPw = crypto.randomBytes(24).toString("base64url");
     const rolesSql = sql("roles.sql").replace(/:'app_user_password'/g, `'${appUserPw.replace(/'/g, "''")}'`);
     await runAsOwner(ownerUri, rolesSql);
 
-    console.log("==> Applying 0001_init.sql (owner role)");
-    await runAsOwner(ownerUri, sql("../../apps/backend/drizzle/0001_init.sql"));
+    // roles.sql only sets app_user's password on the CREATE ROLE branch, so
+    // when app_user already existed (inherited from the fork), the freshly
+    // generated password above was never actually applied. Set it
+    // unconditionally here so every PR branch gets its own distinct
+    // app_user credential regardless of which path roles.sql took —
+    // isolated from production's app_user password and from any other PR's.
+    console.log("==> Setting app_user password for this branch");
+    await runAsOwner(ownerUri, `ALTER ROLE "app_user" WITH PASSWORD '${appUserPw.replace(/'/g, "''")}';`);
+
+    if (await schemaAlreadyPresent(ownerUri)) {
+      console.log("==> Schema already present (branch forked from a non-empty parent) — skipping 0001_init.sql");
+    } else {
+      console.log("==> Applying 0001_init.sql (owner role)");
+      await runAsOwner(ownerUri, sql("../../apps/backend/drizzle/0001_init.sql"));
+    }
 
     console.log("==> Seeding preview fixture (owner role)");
     // Reuses AGENT_01's two-tenant PENTEST_ISOLATION fixture — it doubles
     // as reasonable preview data so a human reviewer has something real to
     // click through (per PREVIEW ENVIRONMENTS: "a running application
-    // against real branched data").
+    // against real branched data"). Safe to run even when the branch
+    // already carries real production data (forked case) — its tenant/user
+    // ids are fixed and distinct from anything production would generate
+    // via gen_random_uuid(), and the ON CONFLICT guards make repeat runs
+    // against the same already-seeded branch a no-op either way.
     await runAsOwner(ownerUri, sql("seed_isolation_test.sql"));
 
     const appUserUri = ownerUri.replace(/:\/\/[^:]+:[^@]+@/, `://app_user:${appUserPw}@`);

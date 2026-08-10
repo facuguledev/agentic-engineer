@@ -22,6 +22,8 @@ on:
       - "apps/backend/**"
       - "apps/frontend/**"
       - "contracts/api-specs/**"
+      - "infra/neon/**"
+      - ".github/workflows/pr-checks.yml"
 
 permissions:
   contents: read
@@ -211,16 +213,21 @@ jobs:
           VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
         run: |
           set -euo pipefail
-          # KNOWN GAP: no DATABASE_URL / backend API wiring here on purpose.
-          # apps/backend has no deployed API (schema/migrations only, no HTTP
-          # server) — the frontend's NEXT_PUBLIC_API_BASE_URL has nothing
-          # real to point at yet. This preview deploy is UI/a11y/layout
-          # review only; expect the app's own error states ("Failed to load
-          # tasks", etc.) to render, same limitation apps/frontend/scripts/
-          # axe-audit.mjs already documents for the same reason. The Neon
-          # branch created in the previous step (steps.neon.outputs.*) is
-          # provisioned but intentionally unused here until a real backend
-          # exists to hand its connection string to.
+          # KNOWN GAP: no DATABASE_URL / JWT_SECRET wiring here on purpose.
+          # The backend is real now (apps/frontend/app/api/**, deployed to
+          # production — see docs/ci-cd-required-secrets.md), but this
+          # preview deploy still doesn't hand it the per-PR Neon branch's
+          # connection string or a session secret: doing that requires
+          # deciding how to inject them into a --prebuilt Vercel preview
+          # build per-branch (env var injection mechanism, per-PR vs shared
+          # JWT_SECRET), which hasn't been designed yet. This preview deploy
+          # is UI/a11y/layout review only; expect the app's own error states
+          # ("Failed to load tasks", etc.) to render, same limitation
+          # apps/frontend/scripts/axe-audit.mjs already documents for the
+          # same reason. The Neon branch created in the previous step
+          # (steps.neon.outputs.*) is provisioned (and, as of the
+          # provision_pr_branch.mjs idempotency fix, correctly forks
+          # production's real schema+data) but still unused here.
           npx vercel@58.7.1 pull --yes --environment=preview --token="$VERCEL_TOKEN"
 
           # DIAGNOSTIC: pinpointing a persistent doubled-path bug

@@ -225,16 +225,51 @@ jobs:
             echo "::error::deploy-artifact produced no deployment URL — cannot health-check. Blocking."
             exit 1
           fi
-          # KNOWN GAP: apps/frontend has no /api/health route yet (no
-          # backend exists to check the health of either — see the
-          # provision-preview-env comment in pr-checks.yml for the same
-          # underlying gap). This will legitimately fail until that route
-          # is added, which is correct: a real failure, not a fake stub.
           curl -sf --max-time 10 "$PROD_URL/api/health"
       - name: Authenticated smoke path (login + one tenant-scoped read)
+        env:
+          PROD_URL: ${{ needs.deploy-artifact.outputs.vercel-deployment-url }}
+          SMOKE_TEST_EMAIL: ${{ secrets.SMOKE_TEST_EMAIL }}
         run: |
-          echo "::error::No smoke-test credentials/fixture tenant exist yet, and no auth exists in the app to test against (no backend deployed — see DEPLOY_ARTIFACT's known-gap comment). REPLACE_ME with a dedicated read-only smoke-test account once both a real backend and auth exist."
-          exit 1
+          set -euo pipefail
+          if [ -z "$SMOKE_TEST_EMAIL" ]; then
+            echo "::error::SMOKE_TEST_EMAIL is not set on the production environment — cannot run the authenticated smoke path. Add it as an environment secret (see docs/ci-cd-required-secrets.md, external prerequisite #7)."
+            exit 1
+          fi
+
+          # Dedicated read-only smoke-test tenant/user, seeded once directly
+          # in production (see docs/ci-cd-required-secrets.md). Auth is
+          # deliberately email-only in v1 (see
+          # apps/frontend/app/api/auth/login/route.ts) — knowing this email
+          # is equivalent to a credential, which is why it lives in secrets,
+          # not vars.
+          COOKIE_JAR=$(mktemp)
+
+          LOGIN_STATUS=$(curl -s --max-time 10 -o /tmp/smoke-login-body.json -w '%{http_code}' \
+            -c "$COOKIE_JAR" \
+            -H 'Content-Type: application/json' \
+            -d "{\"email\":\"$SMOKE_TEST_EMAIL\"}" \
+            "$PROD_URL/api/auth/login")
+          if [ "$LOGIN_STATUS" != "200" ]; then
+            echo "::error::Smoke-test login returned $LOGIN_STATUS, expected 200. Body: $(cat /tmp/smoke-login-body.json)"
+            exit 1
+          fi
+
+          TENANT_STATUS=$(curl -s --max-time 10 -o /tmp/smoke-tenant-body.json -w '%{http_code}' \
+            -b "$COOKIE_JAR" \
+            "$PROD_URL/api/tenant")
+          if [ "$TENANT_STATUS" != "200" ]; then
+            echo "::error::Smoke-test tenant-scoped read returned $TENANT_STATUS, expected 200. Body: $(cat /tmp/smoke-tenant-body.json)"
+            exit 1
+          fi
+
+          TENANT_SLUG=$(node -pe "JSON.parse(require('fs').readFileSync('/tmp/smoke-tenant-body.json','utf8')).slug")
+          if [ "$TENANT_SLUG" != "ci-smoke-test" ]; then
+            echo "::error::Tenant-scoped read returned slug '$TENANT_SLUG', expected 'ci-smoke-test' — session/RLS tenant scoping may be broken."
+            exit 1
+          fi
+
+          echo "Authenticated smoke path passed: logged in as the smoke-test account, tenant-scoped read returned the correct tenant."
 
   rollback-on-failed-health:
     name: Roll back frontend deployment (artifact only, never schema)
