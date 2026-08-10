@@ -33,11 +33,12 @@ than silently no-op or fake success.
    `next.config.mjs` + instrumentation files, `productionBrowserSourceMaps: false` set
    explicitly. Verified with a real clean-copy `npm install` + `next build`: succeeds,
    Sentry code present in compiled output, zero `.map` files under `.next/static`.
-6. **No `/api/health` route in `apps/frontend`.** New gap, found while wiring
-   `verify-health`. There's no backend deployed anywhere (see #7), so there's nothing to
-   health-check yet even on the frontend's own terms — `verify-health`'s health-check
-   step now points at the real deployed URL but will legitimately fail with a 404 until
-   this route exists. That's intentional: a real failure beats a hardcoded stub.
+6. ~~**No `/api/health` route in `apps/frontend`.**~~ **Fixed.**
+   `apps/frontend/app/api/health/route.ts` added — liveness check only (confirms the
+   Next.js server is up), deliberately not a deep dependency check since there's still
+   no backend to probe (see #7). `force-dynamic` so it always reflects the live server,
+   not a build-time value. Test added and verified via a clean-copy `next build` +
+   `vitest run`: route compiles as a dynamic route, all 14 frontend tests pass.
 7. **No backend API deployed anywhere.** `apps/backend` is schema/migrations only (no
    HTTP server, no route handlers) — `NEXT_PUBLIC_API_BASE_URL` has nothing real to point
    at. Consequence: the Neon branch `provision_pr_branch.mjs` creates for each PR preview
@@ -76,6 +77,11 @@ push to `main`), `teardown_pr_branch.mjs` (blocked on closing PR #1).
 **Still `exit 1` stubs, blocking on purpose:** `verify-health`'s authenticated smoke path
 (no backend/auth), `emit-deploy-manifest`'s commit step (no real bot email set).
 
-**Known gap, not yet a stub because nothing references it as blocking:** `/api/health`
-doesn't exist, so `verify-health`'s health-check step will run for real and fail with a
-404 rather than being hand-blocked.
+**Real, verified on a live GitHub Actions production run (`deploy-production.yml`,
+2 real end-to-end runs so far):** migration checksum validation (skips correctly when no
+migration changed — confirmed this cascades a `success()` transitive-ancestor skip bug
+into downstream jobs, since fixed), Vercel production deploy, `/api/health` (added this
+session, health-check step now hits a real 200 instead of a 404), and — the big one —
+automated rollback, confirmed actually repointing traffic via the Vercel API (previous
+`vercel rollback` with no args was silently a no-op; fixed to resolve and pass the real
+previous deployment explicitly).
