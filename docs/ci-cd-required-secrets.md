@@ -39,6 +39,16 @@ than silently no-op or fake success.
    no backend to probe (see #7). `force-dynamic` so it always reflects the live server,
    not a build-time value. Test added and verified via a clean-copy `next build` +
    `vitest run`: route compiles as a dynamic route, all 14 frontend tests pass.
+7b. ~~**Vercel's native Git integration was deploying in parallel to our own CLI-driven
+   deploys.**~~ **Fixed.** Added `apps/frontend/vercel.json` with
+   `"git": { "deploymentEnabled": false }`, per Vercel's own documented guidance for the
+   Actions + CLI `--prebuilt` pattern. Without this, every push to `main` triggered two
+   independent production deployments (ours via `deploy-production.yml`, and Vercel's own
+   auto-deploy from the GitHub connection) — confirmed live as the root cause of a
+   `vercel rollback` failing with `402: To rollback further than the previous production
+   deployment, upgrade to pro`, since the two interleaved deployment histories made
+   "the previous deployment" ambiguous between what our API query resolved and what
+   Vercel's Hobby-plan rollback actually allows.
 7. **No backend API deployed anywhere.** `apps/backend` is schema/migrations only (no
    HTTP server, no route handlers) — `NEXT_PUBLIC_API_BASE_URL` has nothing real to point
    at. Consequence: the Neon branch `provision_pr_branch.mjs` creates for each PR preview
