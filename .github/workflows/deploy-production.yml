@@ -274,12 +274,24 @@ jobs:
           # production deployment ourselves via the Vercel API and pass it
           # explicitly, which is the only form `vercel rollback` actually
           # supports: `vercel rollback [deployment-id or url]`.
+          # limit=10 + filter to readyState === READY: on a Hobby plan,
+          # Vercel only allows rolling back to the single immediately-
+          # previous deployment, so picking the wrong index here (e.g. a
+          # deployment that errored mid-build, or a stray one from
+          # Vercel's native Git integration racing our own CLI deploy
+          # before apps/frontend/vercel.json's deploymentEnabled: false
+          # took effect) causes a 402 "further than the previous
+          # deployment" error even though it's literally index [1] of the
+          # unfiltered list. Filtering to READY-only is a best-effort fix
+          # for that noise, not a full guarantee — see
+          # docs/ci-cd-required-secrets.md gap #7b for the full story.
           DEPLOYMENTS=$(curl -sf \
             -H "Authorization: Bearer $VERCEL_TOKEN" \
-            "https://api.vercel.com/v6/deployments?projectId=${VERCEL_PROJECT_ID}&teamId=${VERCEL_ORG_ID}&target=production&limit=2")
+            "https://api.vercel.com/v6/deployments?projectId=${VERCEL_PROJECT_ID}&teamId=${VERCEL_ORG_ID}&target=production&limit=10")
           PREVIOUS_URL=$(echo "$DEPLOYMENTS" | node -pe "
             const d = JSON.parse(require('fs').readFileSync(0, 'utf8'));
-            d.deployments && d.deployments[1] ? d.deployments[1].url : ''
+            const ready = (d.deployments || []).filter((x) => x.state === 'READY' || x.readyState === 'READY');
+            ready[1] ? ready[1].url : ''
           ")
           if [ -z "$PREVIOUS_URL" ]; then
             echo "::error::No prior production deployment found to roll back to (this looks like the first production deployment ever for this project — there is nothing 'last known-healthy' to repoint traffic to). Human investigation required."
