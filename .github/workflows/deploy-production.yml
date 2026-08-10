@@ -24,6 +24,11 @@ on:
       - "apps/backend/**"
       - "apps/frontend/**"
       - "contracts/api-specs/**"
+  # Manual trigger, for re-running the production pipeline against the
+  # current tip of main without needing a commit that happens to touch
+  # apps/** or contracts/api-specs/** (e.g. after a workflow-only fix like
+  # this one, or a deliberate manual re-deploy/rollback exercise).
+  workflow_dispatch:
 
 permissions:
   contents: write # for the deploy-manifest commit in emit-deploy-manifest
