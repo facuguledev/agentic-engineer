@@ -49,13 +49,26 @@ than silently no-op or fake success.
    deployment, upgrade to pro`, since the two interleaved deployment histories made
    "the previous deployment" ambiguous between what our API query resolved and what
    Vercel's Hobby-plan rollback actually allows.
-7. **No backend API deployed anywhere.** `apps/backend` is schema/migrations only (no
-   HTTP server, no route handlers) — `NEXT_PUBLIC_API_BASE_URL` has nothing real to point
-   at. Consequence: the Neon branch `provision_pr_branch.mjs` creates for each PR preview
-   is provisioned but currently unused by the deployed frontend (nothing to hand its
-   connection string to), and `verify-health`'s authenticated smoke-path step can't be
-   implemented until both a backend and auth exist. Preview/production deploys still work
-   as UI/layout/a11y review; expect the app's own data-loading error states to render.
+7. ~~**No backend API deployed anywhere.**~~ **Fixed.** Full backend implemented as
+   Next.js Route Handlers in `apps/frontend/app/api/**` (auth/login, auth/logout, tenant,
+   users, users/[userId], projects, projects/[projectId], projects/[projectId]/tasks,
+   tasks, tasks/[taskId]), conforming to `contracts/api-specs/schema.ts`. RLS-safe via
+   `lib/db/pool.ts`'s `withTenant` helper (session-scoped `app.current_tenant_id`) plus a
+   separate identity pool for the login route only. JWT session cookies via `jose`.
+   Merged via PR #10, deployed to production (`deploy-production.yml` run #11), and
+   verified end-to-end live: `POST /api/auth/login` with the seeded admin account returns
+   200 and a real user row, and subsequent `GET /api/tenant` / `GET /api/users` calls
+   (using the session cookie) return real tenant-scoped data from production Neon.
+9. **New gap found while deploying #10**: `infra/neon/provision_pr_branch.mjs` now fails
+   for new PRs (`error: type "user_role" already exists`, code `42710`). Root cause: the
+   script forks a fresh Neon branch off `production` and then re-runs the full migration,
+   which assumes the branch starts empty — true when production had no schema, false now
+   that production has a real schema (this session). Preview branches/deploys are broken
+   until this is fixed (e.g. make the migration step idempotent the same way
+   `apply_production.mjs` already is, via a `_migrations_applied` tracking table, or skip
+   re-running schema-creation DDL when forking from a non-empty parent branch). Does not
+   block production deploys — confirmed by merging PR #10 straight to `main` despite this
+   job failing, since it isn't a required check.
 
 ## External prerequisites
 
@@ -96,48 +109,42 @@ automated rollback, confirmed actually repointing traffic via the Vercel API (pr
 `vercel rollback` with no args was silently a no-op; fixed to resolve and pass the real
 previous deployment explicitly).
 
-## RESUME HERE — backend build, in progress
+## Backend build + production wiring — done
 
-Gap #7 above ("No backend API deployed anywhere") is being closed. Status as of this
-session:
+Gap #7 (backend) is closed. Summary of how it landed:
 
-**Done:**
-- Full backend written as Next.js Route Handlers inside `apps/frontend/app/api/**`:
-  `auth/login`, `auth/logout`, `tenant`, `users`, `users/[userId]`, `projects`,
-  `projects/[projectId]`, `projects/[projectId]/tasks`, `tasks`, `tasks/[taskId]`.
-  Conforms to `contracts/api-specs/schema.ts`. Uses `lib/db/pool.ts` (RLS-safe
-  `withTenant` helper + separate identity pool for login), `lib/auth/session.ts`
-  (JWT cookie via `jose`), `lib/api/route-helpers.ts`, `lib/db/serializers.ts`.
-- Verified via clean-room `npm install` + `tsc --noEmit` + `next build` + `vitest run`:
-  all green.
-- `pg`, `jose`, `@types/pg` added to `apps/frontend/package.json`, lockfile regenerated
-  and copied back into the repo.
-- Production Neon DB bootstrapped live (it had 0 tables before this session): roles
-  (`app_user`, owner), schema (`0001_init.sql`: tenants/users/projects/tasks, RLS
-  enabled+forced), and a seed row (tenant "Facundo"/`facundo`, admin user
-  `facugule@gmail.com`) all applied and verified via the Neon SQL Editor.
-- Known already: `app_user` password = `6JBAZhqxGzERDpvq8s_lvCXVfJh0z75q`. Postgres host
-  = `ep-green-term-ax2ah5oi-pooler.c-4.us-east-2.aws.neon.tech`, database = `neondb`.
+- Full backend written as Next.js Route Handlers inside `apps/frontend/app/api/**`,
+  conforming to `contracts/api-specs/schema.ts`. RLS-safe via `lib/db/pool.ts`'s
+  `withTenant` helper + a separate identity pool for the login route only.
+  `lib/auth/session.ts` issues JWT session cookies via `jose`.
+- Code was written directly in the local checkout but never committed/pushed
+  (OneDrive-mounted repo has git locking issues from the sandbox side — commits had to
+  be run by the user locally in PowerShell). Landed as PR #10
+  (`feat/backend-api-routes`, commit `a9d5b8e`), CI green (typecheck/lint/test/a11y —
+  14/14 tests passing), merged to `main`.
+- Neon production DB bootstrapped: roles (`app_user`, `neondb_owner`), schema
+  (`0001_init.sql`, RLS enabled+forced), seed row (tenant "Facundo"/`facundo`, admin user
+  `facugule@gmail.com`).
+- `DATABASE_URL`, `DATABASE_OWNER_URL`, `JWT_SECRET` added as Vercel **Production**
+  environment variables (Preview intentionally left out of scope — preview deploys use
+  per-PR Neon branches, not yet wired to the backend; see gap #9 above, which blocks that
+  anyway).
+- `deploy-production.yml` run #11 (triggered by the PR #10 merge) completed: migration
+  step applied cleanly (idempotent, no-op since schema already existed), frontend
+  promoted to production, and the deploy verified live —
+  `POST https://agentic-engineer-frontend-facuguledev1.vercel.app/api/auth/login` with
+  `facugule@gmail.com` returns 200 with real user data, and subsequent authenticated
+  `GET /api/tenant` and `GET /api/users` return real tenant-scoped rows. The pipeline's
+  `verify-health` smoke-test step still failed on its known `exit 1` stub (see gap #7's
+  note above) — rollback was reviewed and rejected each time to keep the good deployment
+  live, since the stub failure is expected, not a regression.
 
-**NOT done yet — pick up here:**
-1. Get the **owner role's password** (role `neondb_owner` in Neon's Connect dialog →
-   Postgres tab → "Show password" button, or "Reset password" if it's not visible) to
-   build `DATABASE_OWNER_URL`. Was mid-click on "Show password" when the session ended.
-2. Build the two connection strings:
-   - `DATABASE_URL=postgresql://app_user:6JBAZhqxGzERDpvq8s_lvCXVfJh0z75q@ep-green-term-ax2ah5oi-pooler.c-4.us-east-2.aws.neon.tech/neondb?sslmode=require`
-   - `DATABASE_OWNER_URL=postgresql://neondb_owner:<PASSWORD>@ep-green-term-ax2ah5oi-pooler.c-4.us-east-2.aws.neon.tech/neondb?sslmode=require`
-3. Generate a `JWT_SECRET` (e.g. `openssl rand -base64 32`).
-4. Add all three as **Vercel Production** environment variables (Preview intentionally
-   out of scope — preview deploys use per-PR Neon branches with different credentials,
-   not yet wired to the backend; documented as a future gap, not this session's job).
-5. Trigger a fresh production deploy, confirm the app loads real data and login works
-   end-to-end (POST `/api/auth/login` with `facugule@gmail.com`, then a GET that needs
-   the session cookie).
-6. Update this doc's gap #7 entry to reflect the backend now being real (currently still
-   says "No backend API deployed anywhere" — that's now stale).
-7. Optional, not requested yet: update `verify-health`'s hardcoded `exit 1`
-   "Authenticated smoke path" stub in `deploy-production.yml` to do a real login+read
-   check now that real auth exists. Don't do this without being asked.
+**Still open / possible next steps (not started, don't assume you should do these):**
+- Gap #9 (PR-preview Neon branch provisioning broken by non-empty production schema).
+- Optionally replace `verify-health`'s hardcoded `exit 1` "Authenticated smoke path" stub
+  with a real login+read check now that auth exists.
+- `SENTRY_AUTH_TOKEN`/`SENTRY_ORG`/`SENTRY_PROJECT` still not provided (gap in table
+  above, #5) — source maps aren't uploading yet.
 
 Never paste `DATABASE_OWNER_URL`, `JWT_SECRET`, or any password into chat — only
 non-sensitive IDs (project/branch IDs, hostnames) are safe to share here.
