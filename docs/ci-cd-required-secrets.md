@@ -52,13 +52,35 @@ than silently no-op or fake success.
    deployment, upgrade to pro`, since the two interleaved deployment histories made
    "the previous deployment" ambiguous between what our API query resolved and what
    Vercel's Hobby-plan rollback actually allows.
-7. **No backend API deployed anywhere.** `apps/backend` is schema/migrations only (no
-   HTTP server, no route handlers) — `NEXT_PUBLIC_API_BASE_URL` has nothing real to point
-   at. Consequence: the Neon branch `provision_pr_branch.mjs` creates for each PR preview
-   is provisioned but currently unused by the deployed frontend (nothing to hand its
-   connection string to), and `verify-health`'s authenticated smoke-path step can't be
-   implemented until both a backend and auth exist. Preview/production deploys still work
-   as UI/layout/a11y review; expect the app's own data-loading error states to render.
+7. ~~**No backend API deployed anywhere.**~~ **Fixed** — see "Backend build + production
+   wiring — done" below.
+9. ~~**PR-preview Neon branch provisioning broken by non-empty production schema.**~~
+   **Fixed.** `provision_pr_branch.mjs` forks each PR's branch from the project's default
+   branch, which used to be empty (so bootstrapping fresh schema via `0001_init.sql` on
+   every fork was correct) but now — since production was bootstrapped with real schema
+   this session — already carries the full schema/roles/data at fork time, so re-running
+   `0001_init.sql`'s raw `CREATE TYPE`/`CREATE TABLE` statements failed
+   (`type "user_role" already exists`, 42710). Fixed by checking whether the forked branch
+   already has the schema (`SELECT EXISTS (... FROM pg_type WHERE typname = 'user_role')`)
+   and skipping `0001_init.sql` when it does; `roles.sql` was already idempotent (its
+   `CREATE ROLE` is `IF NOT EXISTS`-guarded) so it always runs, but now the script also
+   unconditionally `ALTER ROLE`s `app_user`'s password afterward, since `roles.sql` only
+   sets the password on the create path and a forked branch inherits the role without it.
+   `seed_isolation_test.sql` also hardened with `ON CONFLICT (id) DO NOTHING` on every
+   insert as a defensive no-op guard (its fixed UUIDs don't actually collide with
+   production's `gen_random_uuid()` rows, so this wasn't the cause of the failure, but
+   makes accidental re-runs safe). Not yet re-verified against a real GitHub Actions run —
+   needs a fresh PR to confirm the "Provision Neon branch + Vercel preview" job now passes.
+10. **New gap found while fixing #9: PR previews still aren't wired to the real backend.**
+    `pr-checks.yml`'s Vercel preview deploy still doesn't pass the per-PR Neon branch's
+    connection string or a session secret into the preview build — `provision_pr_branch.mjs`
+    provisions a real, now-correctly-schema'd branch, but nothing hands its connection URI
+    to the deployed preview. Fixing this needs a design decision this session didn't make:
+    how to inject a per-branch `DATABASE_URL` into a `--prebuilt` Vercel preview build (via
+    `vercel env add ... preview <branch>`, writing into `.vercel/.env.preview.local` after
+    `vercel pull`, or something else), and whether `JWT_SECRET` is shared across all
+    previews or generated per-PR. Preview deploys still work as UI/a11y/layout review only;
+    expect the app's own data-loading error states to render. Not started.
 
 ## External prerequisites
 
@@ -70,7 +92,7 @@ than silently no-op or fake success.
 | 4 | Vercel project, `VERCEL_ORG_ID`, `VERCEL_PROJECT_ID`, `VERCEL_TOKEN` | **Done.** Project `agentic-engineer-frontend` created (Root Directory `apps/frontend`), `VERCEL_ORG_ID`/`VERCEL_PROJECT_ID` known, token generated and added as a GitHub secret. Both workflows' Vercel deploy steps are real now (`npx vercel@58.7.1`, pinned), not stubs. |
 | 5 | Sentry project, `SENTRY_AUTH_TOKEN`, `SENTRY_ORG`/`SENTRY_PROJECT` | **Done.** Set on the `production` Environment; confirmed uploading real source maps on run #11 (see gap #5 above). |
 | 6 | Production health-check route | **Blocked on gap #6** — needs `/api/health` added to `apps/frontend`, not an external prerequisite. |
-| 7 | Dedicated read-only smoke-test account/tenant | **Blocked on gap #7** — no backend/auth exists yet to create an account against. |
+| 7 | Dedicated read-only smoke-test account/tenant | **Done.** A dedicated `ci-smoke-test` tenant + member-role user (email in `SMOKE_TEST_EMAIL`, a `production` Environment secret — knowing the email is equivalent to a credential under the current email-only auth, so it's a secret, not a variable) seeded directly in production Neon. `verify-health`'s authenticated smoke path now logs in as this account and asserts the tenant-scoped read returns the correct tenant slug. |
 | 8 | Bot identity email for `git config user.email` in `emit-deploy-manifest` | **Done.** Set to the repo owner's email. |
 
 ## What's real now vs. still a stub
@@ -87,8 +109,10 @@ wiring verified via clean-copy build (not yet against real Sentry credentials).
 and rollback steps (blocked on a merge to `main`, since that workflow only triggers on
 push to `main`), `teardown_pr_branch.mjs` (blocked on closing PR #1).
 
-**Still `exit 1` stubs, blocking on purpose:** `verify-health`'s authenticated smoke path
-(no backend/auth), `emit-deploy-manifest`'s commit step (no real bot email set).
+**Still `exit 1` stubs, blocking on purpose:** none currently — `verify-health`'s
+authenticated smoke path was the last one and is now a real check (see below).
+`emit-deploy-manifest`'s commit step already has a real bot email set (external
+prerequisite #8).
 
 **Real, verified on a live GitHub Actions production run (`deploy-production.yml`,
 2 real end-to-end runs so far):** migration checksum validation (skips correctly when no
@@ -145,10 +169,27 @@ without realizing it would be committed. Remediation, completed:
 No further action needed on this incident. The password itself is never written to this
 file, git, or chat — only Neon Console and Vercel's environment-variable UI hold it.
 
+## Gap #9 fix + real smoke-test — done
+
+Both remaining open items from the previous session are closed:
+
+- **Gap #9** (PR-preview Neon branch provisioning broken by non-empty production schema)
+  — fixed in `provision_pr_branch.mjs` and `seed_isolation_test.sql`. See gap #9 above for
+  the full explanation. Surfaced a new, separate, not-yet-fixed gap while investigating:
+  gap #10 (previews still don't get a real `DATABASE_URL`/`JWT_SECRET`).
+- **`verify-health`'s authenticated smoke-path stub** — replaced with a real check in
+  `deploy-production.yml`: logs in as the dedicated `ci-smoke-test` account
+  (`SMOKE_TEST_EMAIL`, external prerequisite #7), then does a `GET /api/tenant` with the
+  session cookie and asserts the returned `slug` is exactly `ci-smoke-test` — this
+  specifically exercises that the RLS tenant-scoping is working, not just that some
+  response came back.
+
 **Still open / possible next steps (not started, don't assume you should do these):**
-- Gap #9 (PR-preview Neon branch provisioning broken by non-empty production schema).
-- Optionally replace `verify-health`'s hardcoded `exit 1` "Authenticated smoke path" stub
-  with a real login+read check now that auth exists.
+- Gap #10 (PR previews don't wire a per-branch `DATABASE_URL`/`JWT_SECRET` into the
+  Vercel preview build yet — needs a design decision on the injection mechanism first).
+- Neither fix in this section has been verified against a real GitHub Actions run yet —
+  needs a fresh PR (for gap #9) and a fresh `deploy-production.yml` run (for the smoke
+  test) to confirm both work live, not just by code review.
 
 Never paste `DATABASE_OWNER_URL`, `JWT_SECRET`, or any password into chat or into this
 file — only non-sensitive IDs (project/branch IDs, hostnames) are safe to share here.
