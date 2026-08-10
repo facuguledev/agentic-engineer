@@ -184,16 +184,44 @@ Both remaining open items from the previous session are closed:
   specifically exercises that the RLS tenant-scoping is working, not just that some
   response came back.
 
+Both were verified live: PR #11 merged, its "Provision Neon branch + Vercel preview" job
+passed with logs confirming `0001_init.sql` was correctly skipped ("Schema already
+present..."). Also fixed one more latent gap found while validating gap #9: `pr-checks.yml`'s
+path filter didn't include `infra/neon/**` or its own workflow file, so a PR that only
+touches the provisioning script would never actually run it.
+
+## Gap #11 — health-check/smoke-test were silently checking the wrong URL
+
+Running `deploy-production.yml` (run #13) to verify the new smoke-test step surfaced a
+real, previously-hidden bug, unrelated to the smoke-test code itself: `vercel deploy
+--prod` prints the unique per-deployment URL (e.g.
+`https://agentic-engineer-frontend-8mnxjynqt-facuguledev1.vercel.app`), not the aliased
+production domain — even though the deploy did get promoted/aliased correctly. That raw
+per-deployment URL has Vercel Deployment Protection (SSO) enabled by default, so:
+
+- The **health-check step was a false positive the whole time.** `curl -sf` against the
+  protected URL got a 307 redirect to Vercel's SSO login page, which `curl -sf` (without
+  `-L`) treats as a successful response (redirects aren't HTTP errors) — so the step
+  passed on every prior run without ever actually reaching
+  `apps/frontend/app/api/health/route.ts`.
+- The **new authenticated smoke-test step correctly failed loud**, exactly as designed:
+  `POST .../api/auth/login` against the protected URL got a real `401` with a
+  `{"error":{"code":"401","message":"Protected deployment"}}` body from Vercel's edge
+  layer, not the app.
+
+Fixed in `deploy-production.yml`: the `Deploy to Vercel production` step now resolves the
+deployment's actual alias via `GET https://api.vercel.com/v13/deployments/{id}`
+(`.alias[0]`) right after deploying, exposes it as a new `production-url` job output, and
+fails loudly if a deploy somehow has no alias. Both the health-check and smoke-test steps
+now use `production-url` instead of the raw `vercel-deployment-url`. Not yet re-verified
+against a real run — needs another `deploy-production.yml` trigger to confirm the
+smoke-test actually passes against the real, unprotected production domain.
+
 **Still open / possible next steps (not started, don't assume you should do these):**
 - Gap #10 (PR previews don't wire a per-branch `DATABASE_URL`/`JWT_SECRET` into the
   Vercel preview build yet — needs a design decision on the injection mechanism first).
-- Neither fix in this section has been verified against a real GitHub Actions run yet —
-  needs a fresh PR (for gap #9) and a fresh `deploy-production.yml` run (for the smoke
-  test) to confirm both work live, not just by code review.
-- Found and fixed one more latent gap while trying to validate gap #9: `pr-checks.yml`'s
-  path filter didn't include `infra/neon/**` or its own workflow file, so a PR that only
-  touches the provisioning script (like the one fixing gap #9) would never actually run
-  it. Added both to the path filter.
+- Gap #11's fix needs one more live `deploy-production.yml` run to confirm the smoke-test
+  actually passes now (not just that the URL-resolution logic is correct by inspection).
 
 Never paste `DATABASE_OWNER_URL`, `JWT_SECRET`, or any password into chat or into this
 file — only non-sensitive IDs (project/branch IDs, hostnames) are safe to share here.
