@@ -22,6 +22,8 @@ on:
       - "apps/backend/**"
       - "apps/frontend/**"
       - "contracts/api-specs/**"
+      - "infra/neon/**"
+      - ".github/workflows/pr-checks.yml"
 
 permissions:
   contents: read

@@ -190,6 +190,10 @@ Both remaining open items from the previous session are closed:
 - Neither fix in this section has been verified against a real GitHub Actions run yet —
   needs a fresh PR (for gap #9) and a fresh `deploy-production.yml` run (for the smoke
   test) to confirm both work live, not just by code review.
+- Found and fixed one more latent gap while trying to validate gap #9: `pr-checks.yml`'s
+  path filter didn't include `infra/neon/**` or its own workflow file, so a PR that only
+  touches the provisioning script (like the one fixing gap #9) would never actually run
+  it. Added both to the path filter.
 
 Never paste `DATABASE_OWNER_URL`, `JWT_SECRET`, or any password into chat or into this
 file — only non-sensitive IDs (project/branch IDs, hostnames) are safe to share here.
