@@ -213,15 +213,54 @@ Fixed in `deploy-production.yml`: the `Deploy to Vercel production` step now res
 deployment's actual alias via `GET https://api.vercel.com/v13/deployments/{id}`
 (`.alias[0]`) right after deploying, exposes it as a new `production-url` job output, and
 fails loudly if a deploy somehow has no alias. Both the health-check and smoke-test steps
-now use `production-url` instead of the raw `vercel-deployment-url`. Not yet re-verified
-against a real run — needs another `deploy-production.yml` trigger to confirm the
-smoke-test actually passes against the real, unprotected production domain.
+now use `production-url` instead of the raw `vercel-deployment-url`. **Verified** on
+`deploy-production.yml` run #14 (commit `b193666`): `production-url` resolved correctly to
+the aliased domain — but that run then surfaced gap #12 below, a second, independent cause
+of the same symptom.
+
+## Gap #12 — Vercel Authentication was blocking the aliased production domain too (and every real user)
+
+Run #14's alias-resolution fix (gap #11) was correct, but the smoke-test still failed with
+the same `401 Protected deployment` body — this time against the correctly-resolved alias
+`https://agentic-engineer-frontend-facuguledev1.vercel.app`. Root cause: the Vercel
+project's **Vercel Authentication** setting (Project Settings → Deployment Protection) was
+enabled with "Standard Protection", which requires visitors to be logged into Vercel and on
+the team to view *any* deployment except ones reachable via a **production Custom
+Domain**. Since no custom domain was ever configured for this project, the aliased
+`*.vercel.app` production URL doesn't qualify for that exemption — meaning this had been
+blocking **every real end user**, not just CI, since the project was created. The app's own
+email-based login (deliberate v1 scope) was never actually reachable by anyone outside the
+Vercel team.
+
+Fixed by disabling Vercel Authentication entirely (Project Settings → Deployment
+Protection → Vercel Authentication → Require Log In → off), confirmed via the "Vercel
+Authentication disabled" toast. This was a deliberate choice, not the only option — the
+app has its own auth layer, so Vercel's team-membership gate was redundant for production
+and actively broke real usage. Also added a **Protection Bypass for Automation** secret
+(named "GitHub Actions deploy-production smoke-test" in the Vercel dashboard) as a backup,
+in case Vercel Authentication is ever re-enabled for production later (e.g. if a custom
+domain is added and someone wants Preview-only protection back) — that bypass secret is
+not currently wired into the smoke-test workflow since it isn't needed while Vercel
+Authentication is off, and its value was never extracted into chat, logs, or this file (the
+CI/agent tooling used to create it explicitly blocks scraping secret values out of the
+page).
+
+**Verified end-to-end** on `deploy-production.yml` run #14, attempt 2: `Authenticated
+smoke path (login + one tenant-scoped read)` step passed in 5s with log line
+`Authenticated smoke path passed: logged in as the smoke-test account, tenant-scoped read
+returned the correct tenant.` — a real 200 from `POST /api/auth/login`, a real
+tenant-scoped `GET /api/tenant` returning `slug: "ci-smoke-test"`, against the real
+production alias, with no protection layer in the way. `Health-check endpoint` also passed
+correctly this time (a genuine 200, not the gap #11 false positive).
 
 **Still open / possible next steps (not started, don't assume you should do these):**
 - Gap #10 (PR previews don't wire a per-branch `DATABASE_URL`/`JWT_SECRET` into the
   Vercel preview build yet — needs a design decision on the injection mechanism first).
-- Gap #11's fix needs one more live `deploy-production.yml` run to confirm the smoke-test
-  actually passes now (not just that the URL-resolution logic is correct by inspection).
+- If a custom domain is ever added to the Vercel project, consider whether Vercel
+  Authentication should be re-enabled scoped to Preview deployments only (Standard
+  Protection already exempts production Custom Domains automatically, so this would need
+  no further workflow changes if a custom domain is used instead of the `*.vercel.app`
+  alias).
 
 Never paste `DATABASE_OWNER_URL`, `JWT_SECRET`, or any password into chat or into this
 file — only non-sensitive IDs (project/branch IDs, hostnames) are safe to share here.
