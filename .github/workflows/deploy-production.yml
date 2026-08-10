@@ -151,6 +151,7 @@ jobs:
     outputs:
       vercel-deployment-id: ${{ steps.deploy.outputs.deployment_id }}
       vercel-deployment-url: ${{ steps.deploy.outputs.url }}
+      production-url: ${{ steps.deploy.outputs.production_url }}
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
       - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
@@ -191,8 +192,32 @@ jobs:
           npx vercel@58.7.1 pull --yes --environment=production --token="$VERCEL_TOKEN"
           npx vercel@58.7.1 build --prod --token="$VERCEL_TOKEN"
           DEPLOYMENT_URL=$(npx vercel@58.7.1 deploy --prebuilt --prod --token="$VERCEL_TOKEN")
+          DEPLOYMENT_ID=$(basename "$DEPLOYMENT_URL")
           echo "url=$DEPLOYMENT_URL" >> "$GITHUB_OUTPUT"
-          echo "deployment_id=$(basename "$DEPLOYMENT_URL")" >> "$GITHUB_OUTPUT"
+          echo "deployment_id=$DEPLOYMENT_ID" >> "$GITHUB_OUTPUT"
+
+          # BUG FIX: `vercel deploy --prod` prints the unique per-deployment
+          # URL (e.g. https://<project>-<hash>-<team>.vercel.app), NOT the
+          # aliased production domain — even though this deploy did get
+          # promoted/aliased to production. That raw per-deployment URL has
+          # Vercel Deployment Protection (SSO) enabled, so any automated
+          # request to it either 401s (API calls) or 307-redirects to a
+          # Vercel login page (GET requests) — confirmed live: `curl -sf`
+          # against it in the health-check step "succeeded" while actually
+          # only following a redirect to the SSO page, never reaching
+          # apps/frontend/app/api/health/route.ts at all, and the
+          # authenticated smoke-test step got a hard 401 with a
+          # "Protected deployment" body instead of a real app response.
+          # Fix: resolve the actual alias this deployment was promoted to
+          # via the Vercel API and use THAT for all automated checks.
+          ALIAS_HOST=$(curl -sf -H "Authorization: Bearer $VERCEL_TOKEN" \
+            "https://api.vercel.com/v13/deployments/${DEPLOYMENT_ID}?teamId=${VERCEL_ORG_ID}" \
+            | node -e "const d=JSON.parse(require('fs').readFileSync(0,'utf8'));process.stdout.write((d.alias&&d.alias[0])||'');")
+          if [ -z "$ALIAS_HOST" ]; then
+            echo "::error::Deployment ${DEPLOYMENT_ID} has no alias — it was not actually promoted to a public production domain. Cannot run health-check/smoke-test against a Deployment-Protection-gated URL."
+            exit 1
+          fi
+          echo "production_url=https://${ALIAS_HOST}" >> "$GITHUB_OUTPUT"
 
   # ---------------------------------------------------------------------
   # 7. VERIFY_HEALTH — failure triggers artifact rollback (never automatic
@@ -218,7 +243,7 @@ jobs:
     steps:
       - name: Health-check endpoint
         env:
-          PROD_URL: ${{ needs.deploy-artifact.outputs.vercel-deployment-url }}
+          PROD_URL: ${{ needs.deploy-artifact.outputs.production-url }}
         run: |
           set -euo pipefail
           if [ -z "$PROD_URL" ]; then
@@ -228,7 +253,7 @@ jobs:
           curl -sf --max-time 10 "$PROD_URL/api/health"
       - name: Authenticated smoke path (login + one tenant-scoped read)
         env:
-          PROD_URL: ${{ needs.deploy-artifact.outputs.vercel-deployment-url }}
+          PROD_URL: ${{ needs.deploy-artifact.outputs.production-url }}
           SMOKE_TEST_EMAIL: ${{ secrets.SMOKE_TEST_EMAIL }}
         run: |
           set -euo pipefail
