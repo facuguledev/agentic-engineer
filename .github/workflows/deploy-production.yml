@@ -197,6 +197,18 @@ jobs:
     name: Smoke-test live production
     runs-on: ubuntu-latest
     needs: deploy-artifact
+    # Explicit override, same reasoning as deploy-artifact's own `if:`.
+    # Without this, GitHub's default `if: success()` is evaluated against
+    # the whole transitive ancestor chain, not just this job's direct
+    # `needs`. deploy-migration (deploy-artifact's own dependency, two
+    # hops up) is legitimately `skipped` whenever a PR touches no
+    # migration file, and that skip propagates forward through success()
+    # even though deploy-artifact itself handled it and succeeded —
+    # causing this job to skip in cascade despite deploy-artifact being a
+    # real success. Confirmed live: this exact case happened on the first
+    # production run (migration correctly skipped, deploy-artifact
+    # succeeded, verify-health silently skipped instead of running).
+    if: always() && needs.deploy-artifact.result == 'success'
     environment: production
     steps:
       - name: Health-check endpoint
@@ -250,7 +262,13 @@ jobs:
     name: Write deploy manifest for AGENT_04
     runs-on: ubuntu-latest
     needs: [deploy-artifact, verify-health]
-    if: success()
+    # Explicit override, not the default `success()` — same transitive-
+    # ancestor-skip issue documented on verify-health's `if:` above.
+    # Checking only this job's direct needs, so a legitimately-skipped
+    # deploy-migration (no new migration in this deploy) never blocks the
+    # manifest from being written once deploy-artifact and verify-health
+    # both genuinely succeed.
+    if: always() && needs.deploy-artifact.result == 'success' && needs.verify-health.result == 'success'
     permissions:
       contents: write
     steps:
