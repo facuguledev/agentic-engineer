@@ -29,10 +29,13 @@ than silently no-op or fake success.
    Neon API call path (confirmed via `curl` getting a real `401` from a fake key — proves
    the endpoint/auth format, since this dev sandbox's proxy setup blocks Node's own
    `fetch()` from completing the call; not an issue on a GitHub-hosted runner).
-5. ~~**No Sentry integration.**~~ **Fixed.** `@sentry/nextjs` wired into
-   `next.config.mjs` + instrumentation files, `productionBrowserSourceMaps: false` set
-   explicitly. Verified with a real clean-copy `npm install` + `next build`: succeeds,
-   Sentry code present in compiled output, zero `.map` files under `.next/static`.
+5. ~~**No Sentry integration.**~~ **Fixed, and now confirmed fully live.** `@sentry/nextjs`
+   wired into `next.config.mjs` + instrumentation files, `productionBrowserSourceMaps:
+   false` set explicitly. `SENTRY_AUTH_TOKEN` (secret) and `SENTRY_ORG`/`SENTRY_PROJECT`
+   (variables) are set on the `production` GitHub Environment. Verified on the real
+   `deploy-production.yml` run #11 build log: no "no auth token" warnings, source maps
+   actually uploaded ("Uploaded files to Sentry", org `facundo-guledjian`, project
+   `javascript-nextjs`, release `5767237...`).
 6. ~~**No `/api/health` route in `apps/frontend`.**~~ **Fixed.**
    `apps/frontend/app/api/health/route.ts` added — liveness check only (confirms the
    Next.js server is up), deliberately not a deep dependency check since there's still
@@ -65,7 +68,7 @@ than silently no-op or fake success.
 | 2 | Neon API key (preview-scoped) + `NEON_PROJECT_ID` | **Done.** Set in the `preview` Environment's secrets. Verified end-to-end on a real GitHub Actions run: PR #1's "Provision Neon branch + Vercel preview" job passed, including "Create Neon branch for this PR" (8s) and "Deploy Vercel preview" (1m 33s). |
 | 3 | Neon API key (production-scoped) + `NEON_PROD_BRANCH_ID` | **Not yet provided.** `apply_production.mjs` is written and code-verified but has never run against real Neon — needs `NEON_PROD_API_KEY` and `NEON_PROD_BRANCH_ID` in the `production` Environment's secrets. |
 | 4 | Vercel project, `VERCEL_ORG_ID`, `VERCEL_PROJECT_ID`, `VERCEL_TOKEN` | **Done.** Project `agentic-engineer-frontend` created (Root Directory `apps/frontend`), `VERCEL_ORG_ID`/`VERCEL_PROJECT_ID` known, token generated and added as a GitHub secret. Both workflows' Vercel deploy steps are real now (`npx vercel@58.7.1`, pinned), not stubs. |
-| 5 | Sentry project, `SENTRY_AUTH_TOKEN`, `SENTRY_ORG`/`SENTRY_PROJECT` | **Not yet provided.** In-repo wiring is done; build succeeds without these, source maps just won't upload until they're real. |
+| 5 | Sentry project, `SENTRY_AUTH_TOKEN`, `SENTRY_ORG`/`SENTRY_PROJECT` | **Done.** Set on the `production` Environment; confirmed uploading real source maps on run #11 (see gap #5 above). |
 | 6 | Production health-check route | **Blocked on gap #6** — needs `/api/health` added to `apps/frontend`, not an external prerequisite. |
 | 7 | Dedicated read-only smoke-test account/tenant | **Blocked on gap #7** — no backend/auth exists yet to create an account against. |
 | 8 | Bot identity email for `git config user.email` in `emit-deploy-manifest` | **Done.** Set to the repo owner's email. |
@@ -96,48 +99,56 @@ automated rollback, confirmed actually repointing traffic via the Vercel API (pr
 `vercel rollback` with no args was silently a no-op; fixed to resolve and pass the real
 previous deployment explicitly).
 
-## RESUME HERE — backend build, in progress
+## Backend build + production wiring — done
 
-Gap #7 above ("No backend API deployed anywhere") is being closed. Status as of this
-session:
+Gap #7 (backend) is closed. Summary of how it landed:
 
-**Done:**
-- Full backend written as Next.js Route Handlers inside `apps/frontend/app/api/**`:
-  `auth/login`, `auth/logout`, `tenant`, `users`, `users/[userId]`, `projects`,
-  `projects/[projectId]`, `projects/[projectId]/tasks`, `tasks`, `tasks/[taskId]`.
-  Conforms to `contracts/api-specs/schema.ts`. Uses `lib/db/pool.ts` (RLS-safe
-  `withTenant` helper + separate identity pool for login), `lib/auth/session.ts`
-  (JWT cookie via `jose`), `lib/api/route-helpers.ts`, `lib/db/serializers.ts`.
+- Full backend written as Next.js Route Handlers inside `apps/frontend/app/api/**`,
+  conforming to `contracts/api-specs/schema.ts`. RLS-safe via `lib/db/pool.ts`'s
+  `withTenant` helper + a separate identity pool for the login route only.
+  `lib/auth/session.ts` issues JWT session cookies via `jose`.
 - Verified via clean-room `npm install` + `tsc --noEmit` + `next build` + `vitest run`:
-  all green.
-- `pg`, `jose`, `@types/pg` added to `apps/frontend/package.json`, lockfile regenerated
-  and copied back into the repo.
-- Production Neon DB bootstrapped live (it had 0 tables before this session): roles
-  (`app_user`, owner), schema (`0001_init.sql`: tenants/users/projects/tasks, RLS
-  enabled+forced), and a seed row (tenant "Facundo"/`facundo`, admin user
-  `facugule@gmail.com`) all applied and verified via the Neon SQL Editor.
-- Known already: `app_user` password = `6JBAZhqxGzERDpvq8s_lvCXVfJh0z75q`. Postgres host
-  = `ep-green-term-ax2ah5oi-pooler.c-4.us-east-2.aws.neon.tech`, database = `neondb`.
+  all green. Landed as PR #10 (`feat/backend-api-routes`, commit `a9d5b8e`), CI green,
+  merged to `main`.
+- Neon production DB bootstrapped: roles (`app_user`, `neondb_owner`), schema
+  (`0001_init.sql`, RLS enabled+forced), seed row (tenant "Facundo"/`facundo`, admin user
+  `facugule@gmail.com`).
+- `DATABASE_URL`, `DATABASE_OWNER_URL`, `JWT_SECRET` added as Vercel **Production**
+  environment variables (Preview intentionally left out of scope — preview deploys use
+  per-PR Neon branches, not yet wired to the backend; see gap #9, which blocks that
+  anyway).
+- `deploy-production.yml` run #11 (triggered by the PR #10 merge) completed: migration
+  step applied cleanly (idempotent, no-op since schema already existed), frontend
+  promoted to production, and the deploy verified live — `POST .../api/auth/login` with
+  `facugule@gmail.com` returns 200 with real user data, and subsequent authenticated
+  `GET /api/tenant` and `GET /api/users` return real tenant-scoped rows. The pipeline's
+  `verify-health` smoke-test step still failed on its known `exit 1` stub — rollback was
+  reviewed and rejected each time to keep the good deployment live, since the stub
+  failure is expected, not a regression.
 
-**NOT done yet — pick up here:**
-1. Get the **owner role's password** (role `neondb_owner` in Neon's Connect dialog →
-   Postgres tab → "Show password" button, or "Reset password" if it's not visible) to
-   build `DATABASE_OWNER_URL`. Was mid-click on "Show password" when the session ended.
-2. Build the two connection strings:
-   - `DATABASE_URL=postgresql://app_user:6JBAZhqxGzERDpvq8s_lvCXVfJh0z75q@ep-green-term-ax2ah5oi-pooler.c-4.us-east-2.aws.neon.tech/neondb?sslmode=require`
-   - `DATABASE_OWNER_URL=postgresql://neondb_owner:<PASSWORD>@ep-green-term-ax2ah5oi-pooler.c-4.us-east-2.aws.neon.tech/neondb?sslmode=require`
-3. Generate a `JWT_SECRET` (e.g. `openssl rand -base64 32`).
-4. Add all three as **Vercel Production** environment variables (Preview intentionally
-   out of scope — preview deploys use per-PR Neon branches with different credentials,
-   not yet wired to the backend; documented as a future gap, not this session's job).
-5. Trigger a fresh production deploy, confirm the app loads real data and login works
-   end-to-end (POST `/api/auth/login` with `facugule@gmail.com`, then a GET that needs
-   the session cookie).
-6. Update this doc's gap #7 entry to reflect the backend now being real (currently still
-   says "No backend API deployed anywhere" — that's now stale).
-7. Optional, not requested yet: update `verify-health`'s hardcoded `exit 1`
-   "Authenticated smoke path" stub in `deploy-production.yml` to do a real login+read
-   check now that real auth exists. Don't do this without being asked.
+### Security incident — credential exposure and rotation (resolved)
 
-Never paste `DATABASE_OWNER_URL`, `JWT_SECRET`, or any password into chat — only
-non-sensitive IDs (project/branch IDs, hostnames) are safe to share here.
+The `app_user` Postgres password was briefly committed in plaintext in an earlier
+version of this doc (PR #10, commit `a9d5b8e`, now on `main` — permanently in git
+history). Root cause: written directly into this file during the backend build session
+without realizing it would be committed. Remediation, completed:
+
+1. Rotated the `app_user` password via the Neon Console (Roles tab → role → Reset
+   password). The old password is now invalid.
+2. Updated Vercel's `DATABASE_URL` **Production** environment variable with the new
+   password.
+3. Re-ran `deploy-production.yml` (run #12) end-to-end — migration step skipped
+   correctly (no-op), frontend promoted, smoke-test failed on the same known stub
+   (rollback rejected as before) — and verified live: `POST /api/auth/login` and
+   `GET /api/tenant` both return 200 with real data using the new credential.
+
+No further action needed on this incident. The password itself is never written to this
+file, git, or chat — only Neon Console and Vercel's environment-variable UI hold it.
+
+**Still open / possible next steps (not started, don't assume you should do these):**
+- Gap #9 (PR-preview Neon branch provisioning broken by non-empty production schema).
+- Optionally replace `verify-health`'s hardcoded `exit 1` "Authenticated smoke path" stub
+  with a real login+read check now that auth exists.
+
+Never paste `DATABASE_OWNER_URL`, `JWT_SECRET`, or any password into chat or into this
+file — only non-sensitive IDs (project/branch IDs, hostnames) are safe to share here.
