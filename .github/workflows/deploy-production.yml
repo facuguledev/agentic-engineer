@@ -263,16 +263,32 @@ jobs:
         run: |
           set -euo pipefail
           echo "::notice::Per ROLLBACK POLICY: automated rollback is frontend/artifact-only. If verify-health failed for schema-related reasons, the migration itself is NOT reverted here — that requires a human-authored forward-fix migration through the normal pipeline."
-          # No target argument: `vercel rollback` with no URL rolls back to
-          # the most recent prior production deployment, which is exactly
-          # "last known-healthy" as long as every deploy that reached this
-          # point already passed its own verify-health (true by induction —
-          # this job only runs after the current deploy's own check failed).
-          # --yes: non-interactive confirmation. Without it, `vercel
-          # rollback` prompts for a y/n confirmation and fails immediately
-          # on a CI runner (no TTY to answer it), even though the rollback
-          # target itself was resolved correctly.
-          npx vercel@58.7.1 rollback --yes --token="$VERCEL_TOKEN"
+
+          # BUG FIX: `vercel rollback` with no argument does NOT roll back
+          # to the previous production deployment, despite what the old
+          # comment here claimed. Confirmed live: it prints "Checking
+          # rollback status... No deployment rollback in progress" — that's
+          # the `vercel rollback status` behavior, not an actual rollback.
+          # There is no documented "roll back to previous, no args needed"
+          # form in this CLI version. We resolve the real previous
+          # production deployment ourselves via the Vercel API and pass it
+          # explicitly, which is the only form `vercel rollback` actually
+          # supports: `vercel rollback [deployment-id or url]`.
+          DEPLOYMENTS=$(curl -sf \
+            -H "Authorization: Bearer $VERCEL_TOKEN" \
+            "https://api.vercel.com/v6/deployments?projectId=${VERCEL_PROJECT_ID}&teamId=${VERCEL_ORG_ID}&target=production&limit=2")
+          PREVIOUS_URL=$(echo "$DEPLOYMENTS" | node -pe "
+            const d = JSON.parse(require('fs').readFileSync(0, 'utf8'));
+            d.deployments && d.deployments[1] ? d.deployments[1].url : ''
+          ")
+          if [ -z "$PREVIOUS_URL" ]; then
+            echo "::error::No prior production deployment found to roll back to (this looks like the first production deployment ever for this project — there is nothing 'last known-healthy' to repoint traffic to). Human investigation required."
+            exit 1
+          fi
+          echo "Rolling back to previous production deployment: https://${PREVIOUS_URL}"
+          # --yes: non-interactive confirmation, required on a CI runner
+          # (no TTY to answer the y/n prompt otherwise).
+          npx vercel@58.7.1 rollback "https://${PREVIOUS_URL}" --yes --token="$VERCEL_TOKEN"
 
   # ---------------------------------------------------------------------
   # 8. EMIT_DEPLOY_MANIFEST
