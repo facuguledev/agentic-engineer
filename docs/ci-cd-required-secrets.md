@@ -95,3 +95,49 @@ session, health-check step now hits a real 200 instead of a 404), and — the bi
 automated rollback, confirmed actually repointing traffic via the Vercel API (previous
 `vercel rollback` with no args was silently a no-op; fixed to resolve and pass the real
 previous deployment explicitly).
+
+## RESUME HERE — backend build, in progress
+
+Gap #7 above ("No backend API deployed anywhere") is being closed. Status as of this
+session:
+
+**Done:**
+- Full backend written as Next.js Route Handlers inside `apps/frontend/app/api/**`:
+  `auth/login`, `auth/logout`, `tenant`, `users`, `users/[userId]`, `projects`,
+  `projects/[projectId]`, `projects/[projectId]/tasks`, `tasks`, `tasks/[taskId]`.
+  Conforms to `contracts/api-specs/schema.ts`. Uses `lib/db/pool.ts` (RLS-safe
+  `withTenant` helper + separate identity pool for login), `lib/auth/session.ts`
+  (JWT cookie via `jose`), `lib/api/route-helpers.ts`, `lib/db/serializers.ts`.
+- Verified via clean-room `npm install` + `tsc --noEmit` + `next build` + `vitest run`:
+  all green.
+- `pg`, `jose`, `@types/pg` added to `apps/frontend/package.json`, lockfile regenerated
+  and copied back into the repo.
+- Production Neon DB bootstrapped live (it had 0 tables before this session): roles
+  (`app_user`, owner), schema (`0001_init.sql`: tenants/users/projects/tasks, RLS
+  enabled+forced), and a seed row (tenant "Facundo"/`facundo`, admin user
+  `facugule@gmail.com`) all applied and verified via the Neon SQL Editor.
+- Known already: `app_user` password = `6JBAZhqxGzERDpvq8s_lvCXVfJh0z75q`. Postgres host
+  = `ep-green-term-ax2ah5oi-pooler.c-4.us-east-2.aws.neon.tech`, database = `neondb`.
+
+**NOT done yet — pick up here:**
+1. Get the **owner role's password** (role `neondb_owner` in Neon's Connect dialog →
+   Postgres tab → "Show password" button, or "Reset password" if it's not visible) to
+   build `DATABASE_OWNER_URL`. Was mid-click on "Show password" when the session ended.
+2. Build the two connection strings:
+   - `DATABASE_URL=postgresql://app_user:6JBAZhqxGzERDpvq8s_lvCXVfJh0z75q@ep-green-term-ax2ah5oi-pooler.c-4.us-east-2.aws.neon.tech/neondb?sslmode=require`
+   - `DATABASE_OWNER_URL=postgresql://neondb_owner:<PASSWORD>@ep-green-term-ax2ah5oi-pooler.c-4.us-east-2.aws.neon.tech/neondb?sslmode=require`
+3. Generate a `JWT_SECRET` (e.g. `openssl rand -base64 32`).
+4. Add all three as **Vercel Production** environment variables (Preview intentionally
+   out of scope — preview deploys use per-PR Neon branches with different credentials,
+   not yet wired to the backend; documented as a future gap, not this session's job).
+5. Trigger a fresh production deploy, confirm the app loads real data and login works
+   end-to-end (POST `/api/auth/login` with `facugule@gmail.com`, then a GET that needs
+   the session cookie).
+6. Update this doc's gap #7 entry to reflect the backend now being real (currently still
+   says "No backend API deployed anywhere" — that's now stale).
+7. Optional, not requested yet: update `verify-health`'s hardcoded `exit 1`
+   "Authenticated smoke path" stub in `deploy-production.yml` to do a real login+read
+   check now that real auth exists. Don't do this without being asked.
+
+Never paste `DATABASE_OWNER_URL`, `JWT_SECRET`, or any password into chat — only
+non-sensitive IDs (project/branch IDs, hostnames) are safe to share here.
