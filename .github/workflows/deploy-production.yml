@@ -258,7 +258,11 @@ jobs:
           # "last known-healthy" as long as every deploy that reached this
           # point already passed its own verify-health (true by induction —
           # this job only runs after the current deploy's own check failed).
-          npx vercel@58.7.1 rollback --token="$VERCEL_TOKEN"
+          # --yes: non-interactive confirmation. Without it, `vercel
+          # rollback` prompts for a y/n confirmation and fails immediately
+          # on a CI runner (no TTY to answer it), even though the rollback
+          # target itself was resolved correctly.
+          npx vercel@58.7.1 rollback --yes --token="$VERCEL_TOKEN"
 
   # ---------------------------------------------------------------------
   # 8. EMIT_DEPLOY_MANIFEST
