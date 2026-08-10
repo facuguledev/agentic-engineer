@@ -250,6 +250,16 @@ jobs:
         # it doesn't need local file access for a pure rollback.
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          # BUG FIX: this step's comment above always claimed the CLI
+          # "resolves the project via VERCEL_ORG_ID/VERCEL_PROJECT_ID
+          # directly" but those two env vars were never actually set here.
+          # Without them, `vercel rollback` has no linked project to work
+          # from and falls back to auto-creating/detecting a project from
+          # the current directory name — confirmed live: it silently
+          # created a brand-new "agentic-engineer" project (wrong one) and
+          # did nothing, instead of rolling back "agentic-engineer-frontend".
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
         run: |
           set -euo pipefail
           echo "::notice::Per ROLLBACK POLICY: automated rollback is frontend/artifact-only. If verify-health failed for schema-related reasons, the migration itself is NOT reverted here — that requires a human-authored forward-fix migration through the normal pipeline."
