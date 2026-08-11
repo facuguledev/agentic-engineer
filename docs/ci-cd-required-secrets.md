@@ -71,16 +71,8 @@ than silently no-op or fake success.
    production's `gen_random_uuid()` rows, so this wasn't the cause of the failure, but
    makes accidental re-runs safe). Not yet re-verified against a real GitHub Actions run —
    needs a fresh PR to confirm the "Provision Neon branch + Vercel preview" job now passes.
-10. **New gap found while fixing #9: PR previews still aren't wired to the real backend.**
-    `pr-checks.yml`'s Vercel preview deploy still doesn't pass the per-PR Neon branch's
-    connection string or a session secret into the preview build — `provision_pr_branch.mjs`
-    provisions a real, now-correctly-schema'd branch, but nothing hands its connection URI
-    to the deployed preview. Fixing this needs a design decision this session didn't make:
-    how to inject a per-branch `DATABASE_URL` into a `--prebuilt` Vercel preview build (via
-    `vercel env add ... preview <branch>`, writing into `.vercel/.env.preview.local` after
-    `vercel pull`, or something else), and whether `JWT_SECRET` is shared across all
-    previews or generated per-PR. Preview deploys still work as UI/a11y/layout review only;
-    expect the app's own data-loading error states to render. Not started.
+10. ~~**PR previews weren't wired to the real backend.**~~ **Fixed.** See "Gap #10 fix —
+    preview deploys now use their own Neon branch" below.
 
 ## External prerequisites
 
@@ -94,6 +86,7 @@ than silently no-op or fake success.
 | 6 | Production health-check route | **Blocked on gap #6** — needs `/api/health` added to `apps/frontend`, not an external prerequisite. |
 | 7 | Dedicated read-only smoke-test account/tenant | **Done.** A dedicated `ci-smoke-test` tenant + member-role user (email in `SMOKE_TEST_EMAIL`, a `production` Environment secret — knowing the email is equivalent to a credential under the current email-only auth, so it's a secret, not a variable) seeded directly in production Neon. `verify-health`'s authenticated smoke path now logs in as this account and asserts the tenant-scoped read returns the correct tenant slug. |
 | 8 | Bot identity email for `git config user.email` in `emit-deploy-manifest` | **Done.** Set to the repo owner's email. |
+| 9 | `PREVIEW_JWT_SECRET` — one fixed value shared across every PR's preview deploys | **Done.** Generated and set on the `preview` Environment's secrets (generated and typed directly into the GitHub UI; the plaintext value never appeared in any tool output, file, or chat message). Deliberately a single shared value, not per-PR — see gap #10 below for why. |
 
 ## What's real now vs. still a stub
 
@@ -254,13 +247,64 @@ production alias, with no protection layer in the way. `Health-check endpoint` a
 correctly this time (a genuine 200, not the gap #11 false positive).
 
 **Still open / possible next steps (not started, don't assume you should do these):**
-- Gap #10 (PR previews don't wire a per-branch `DATABASE_URL`/`JWT_SECRET` into the
-  Vercel preview build yet — needs a design decision on the injection mechanism first).
 - If a custom domain is ever added to the Vercel project, consider whether Vercel
   Authentication should be re-enabled scoped to Preview deployments only (Standard
   Protection already exempts production Custom Domains automatically, so this would need
   no further workflow changes if a custom domain is used instead of the `*.vercel.app`
   alias).
+
+## Gap #10 fix — preview deploys now use their own Neon branch
+
+Two decisions were made explicitly (asked, not assumed) before implementing:
+
+1. **Injection mechanism: `vercel deploy`'s own `-e`/`--env` flag**, not
+   `vercel env add ... preview --git-branch` and not writing into
+   `.vercel/.env.preview.local`. Verified directly against the pinned CLI
+   (`npx vercel@58.7.1 deploy --help`): `-e, --env <KEY=VALUE>` is documented as
+   "Specify environment variables during run-time", with `vercel -e NODE_ENV=production`
+   given as its own example. This matters because `apps/frontend/lib/db/pool.ts` and
+   `lib/auth/session.ts` both read `process.env.DATABASE_URL`/`JWT_SECRET` lazily, inside
+   request handlers — not at module load or `next build` time — so the values only need to
+   exist in the *deployed function's* runtime environment, which is exactly what `-e`/`--env`
+   sets for that one deployment. Writing to `.vercel/.env.preview.local` would only have
+   affected the local `vercel build` step inside the CI runner, never reaching the actual
+   deployed serverless function — that path was considered and rejected as a no-op.
+   `vercel env add --git-branch` was rejected too: `DATABASE_URL` changes every push (the
+   branch — and its `app_user` password — is deleted and recreated each time), so a
+   persisted, project-level env var would need to be removed and re-added on every run
+   anyway, plus cleanup wired into `teardown_pr_branch.mjs` on PR close, for no benefit over
+   just passing the value directly.
+2. **`JWT_SECRET`: one fixed value shared across every PR's previews**, not generated
+   per-PR. Simpler (one secret, set once, external prerequisite #9), and the tradeoff
+   (a preview session cookie signed for one PR's preview would technically verify against
+   another PR's preview too) was accepted as low-stakes for disposable, non-production
+   environments.
+
+Implemented in `pr-checks.yml`'s "Deploy Vercel preview" step:
+`vercel deploy --prebuilt --env "DATABASE_URL=$PREVIEW_DATABASE_URL" --env "DATABASE_OWNER_URL=$PREVIEW_DATABASE_OWNER_URL" --env "JWT_SECRET=$PREVIEW_JWT_SECRET"`,
+where `PREVIEW_DATABASE_URL` is `steps.neon.outputs.connection_uri` and
+`PREVIEW_DATABASE_OWNER_URL` is `steps.neon.outputs.owner_connection_uri`, both from the
+Neon provisioning step immediately above it, and `PREVIEW_JWT_SECRET` is the new secret
+(external prerequisite #9). Guards were added before deploying: if either
+`steps.neon.outputs.connection_uri` or `steps.neon.outputs.owner_connection_uri` is
+somehow empty, the step fails loudly instead of silently deploying a broken preview. The
+PR-comment text was updated from "No backend API is deployed yet" to reflect that
+previews now run against their own real, isolated Neon branch.
+
+**Follow-up fix, found by actually logging into PR #14's own preview after opening it**
+(not just checking that CI was green): the first pass only wired `DATABASE_URL`, which
+covers every RLS-scoped tenant route. It missed `DATABASE_OWNER_URL` — the separate,
+RLS-bypassing connection string that `apps/frontend/lib/db/pool.ts`'s `getIdentityPool()`
+uses, and which only `POST /api/auth/login` calls, to resolve which tenant an email
+belongs to before any tenant is known (see that file's header comment for why the two
+pools have to be separate). Because nothing in `ci-checks` exercises a real login against
+a real preview deployment, this shipped past every automated check and only surfaced as
+a `500 {"error":"Internal error"}` when actually calling `POST /api/auth/login` by hand —
+the Vercel runtime logs for that deployment showed the real cause:
+`Error: DATABASE_OWNER_URL is not set.` `provision_pr_branch.mjs` already computed this
+owner URI (needed internally to apply `roles.sql`/seed data) but never exposed it as a
+step output; fixed by adding `writeOutput("owner_connection_uri", ownerUri)` there and
+wiring it through the same `-e/--env` mechanism as `DATABASE_URL`.
 
 Never paste `DATABASE_OWNER_URL`, `JWT_SECRET`, or any password into chat or into this
 file — only non-sensitive IDs (project/branch IDs, hostnames) are safe to share here.
