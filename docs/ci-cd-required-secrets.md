@@ -308,3 +308,39 @@ wiring it through the same `-e/--env` mechanism as `DATABASE_URL`.
 
 Never paste `DATABASE_OWNER_URL`, `JWT_SECRET`, or any password into chat or into this
 file — only non-sensitive IDs (project/branch IDs, hostnames) are safe to share here.
+
+## Gap #13 fix — Deployment Protection state drift detection (AGENT_04 audit)
+
+AGENT_04's static readiness audit (2026-08-11, "Deployment Protection state drift")
+flagged that the manual fix for Gap #12 (Vercel Authentication disabled project-wide)
+had zero automated verification anywhere in the pipeline — it is an out-of-repo Vercel
+dashboard setting, toggled once by hand, with nothing in CI asserting it stays that
+way. A silent re-enable (manual toggle, team default change, project re-creation)
+would reproduce Gap #12 (blocks all real production users) completely undetected,
+because `verify-health`'s existing health-check used bare `curl -sf`, which does not
+distinguish a `200` from a `307`-to-SSO-login (the same mechanism documented in Gap
+#11) — so a regression would have shown as a passing green check.
+
+Live state was independently confirmed via the Vercel dashboard before wiring any
+assertion (Project Settings → Deployment Protection → "Require Log In": off,
+`ssoProtection: null`), so the new checks below are verified against a real, current
+baseline — not an assumption.
+
+Two additive, read-only-against-Vercel checks added to `deploy-production.yml`'s
+`verify-health` job:
+
+1. **Structural assertion** — a new first step calls Vercel's REST API
+   (`GET /v9/projects/{id}?teamId={org}`, reusing the `VERCEL_TOKEN`/`VERCEL_ORG_ID`/
+   `VERCEL_PROJECT_ID` secrets already present on this environment for
+   `deploy-artifact`/`rollback-on-failed-health`) and asserts the response's
+   `ssoProtection` field is `null`. This names the exact setting, so a failure points
+   directly at Project Settings → Deployment Protection instead of requiring
+   re-diagnosis from a generic HTTP status.
+2. **Behavioral hardening** — the existing "Health-check endpoint" step's bare
+   `curl -sf` was replaced with an explicit `%{http_code}` capture that fails unless
+   the response is exactly `200`. This catches a regression from *any* protection
+   method (Vercel Authentication, Password Protection, Trusted IPs) generically, as a
+   defense-in-depth complement to check 1, which is specific to Vercel Authentication.
+
+No new secrets required — both checks reuse credentials already scoped to this
+environment. Neither performs a state-changing Vercel API call.

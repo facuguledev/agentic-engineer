@@ -241,6 +241,38 @@ jobs:
     if: always() && needs.deploy-artifact.result == 'success'
     environment: production
     steps:
+      - name: Assert Vercel Authentication is not silently re-enabled
+        # AGENT_04 static readiness audit (2026-08-11, "Deployment Protection
+        # state drift"): Deployment Protection is an out-of-repo Vercel
+        # dashboard setting, manually disabled once (Gap #12) with zero CI
+        # assertion anywhere that it stays disabled. A silent re-enable
+        # (manual toggle, team default change, project re-creation) would
+        # reproduce Gap #12 (blocks all real users) completely undetected,
+        # since the health-check below historically treated a 307-to-SSO
+        # redirect as a pass (see Gap #11). This step names the exact
+        # setting via Vercel's own REST API instead of inferring it from an
+        # HTTP status, so a regression points straight at Project Settings >
+        # Deployment Protection. Read-only GET, no state-changing call, no
+        # new secret — reuses VERCEL_TOKEN/VERCEL_ORG_ID/VERCEL_PROJECT_ID
+        # already present on this environment for deploy-artifact/rollback.
+        # Live baseline confirmed disabled (ssoProtection: null) manually
+        # via the Vercel dashboard before this assertion was added, so this
+        # is verified-safe against current real state, not a guess.
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+        run: |
+          set -euo pipefail
+          SSO=$(curl -sf --max-time 10 -H "Authorization: Bearer $VERCEL_TOKEN" \
+            "https://api.vercel.com/v9/projects/${VERCEL_PROJECT_ID}?teamId=${VERCEL_ORG_ID}" \
+            | node -pe "JSON.stringify(JSON.parse(require('fs').readFileSync(0,'utf8')).ssoProtection)")
+          if [ "$SSO" != "null" ]; then
+            echo "::error::Project ssoProtection is $SSO, expected null (disabled). This was deliberately disabled per Gap #12 — a non-null value means it was silently re-enabled (manual toggle, team default change, or project re-creation) and is blocking real users right now, same as before it was first caught. Check Project Settings > Deployment Protection."
+            exit 1
+          fi
+          echo "Vercel Authentication confirmed disabled (ssoProtection: null) — no regression of Gap #12."
+
       - name: Health-check endpoint
         env:
           PROD_URL: ${{ needs.deploy-artifact.outputs.production-url }}
@@ -250,7 +282,22 @@ jobs:
             echo "::error::deploy-artifact produced no deployment URL — cannot health-check. Blocking."
             exit 1
           fi
-          curl -sf --max-time 10 "$PROD_URL/api/health"
+          # AGENT_04 audit finding: bare `curl -sf` only treats HTTP >=400 as
+          # failure. A 3xx redirect (e.g. Deployment Protection's SSO login
+          # redirect) without -L is neither followed nor treated as an
+          # error, so this silently "passed" on every prior run without
+          # ever actually reaching the app (this exact mechanism is Gap
+          # #11). Asserting the literal status code closes that gap
+          # regardless of which protection method caused the redirect —
+          # complementary to, not redundant with, the ssoProtection API
+          # assertion above (that one names Vercel Authentication
+          # specifically; this one catches any 3xx/4xx cause generically).
+          HTTP_CODE=$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 "$PROD_URL/api/health")
+          if [ "$HTTP_CODE" != "200" ]; then
+            echo "::error::Health-check returned $HTTP_CODE, expected 200. If this is 307/401/403, Deployment Protection may have been silently re-enabled on the production scope (see Gap #12) — check Vercel Project Settings > Deployment Protection before assuming an application bug."
+            exit 1
+          fi
+
       - name: Authenticated smoke path (login + one tenant-scoped read)
         env:
           PROD_URL: ${{ needs.deploy-artifact.outputs.production-url }}
