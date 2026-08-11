@@ -43,7 +43,7 @@ export function PulseHowItWorks() {
               (i === 1 ? " md:col-start-5 md:mt-10" : i === 2 ? " md:col-start-9" : "")
             }
           >
-            <span className="font-mono text-label uppercase tracking-[0.08em]" aria-hidden="true">
+            <span className="font-mono text-label text-accent uppercase tracking-[0.08em]" aria-hidden="true">
               {step.number}
             </span>
             <p className="mt-2 text-body font-grotesk">{step.text}</p>

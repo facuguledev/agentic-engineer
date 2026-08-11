@@ -15,7 +15,7 @@ const base = "font-grotesk uppercase tracking-[0.08em] transition-colors duratio
 const variants: Record<ButtonVariant, string> = {
   primary: "bg-black text-white border border-black px-9 py-4 text-label hover:bg-white hover:text-black",
   secondary: "bg-white text-black border border-black px-9 py-4 text-label hover:bg-black hover:text-white",
-  "text-link": "bg-transparent text-black border-none normal-case tracking-normal text-h2 p-0 hover:underline",
+  "text-link": "bg-transparent text-black border-none normal-case tracking-normal text-h2 p-0 hover:underline hover:text-accent",
 };
 
 export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button(

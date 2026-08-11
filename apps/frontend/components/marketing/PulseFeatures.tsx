@@ -34,8 +34,8 @@ export function PulseFeatures() {
       <ScrollScrub className="col-span-12 md:col-span-7 border border-black p-8">
         <p className="text-h2 font-grotesk">Root cause automático</p>
         <p className="mt-4 text-body font-grotesk">
-          Cruza stack traces con el <code className="font-mono">git blame</code> del deploy
-          correlacionado.
+          Cruza stack traces con el <code className="font-mono text-accent">git blame</code> del
+          deploy correlacionado.
         </p>
       </ScrollScrub>
 

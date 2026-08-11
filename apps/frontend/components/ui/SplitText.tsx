@@ -32,7 +32,12 @@ export function SplitText({
     const prefersReducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     if (prefersReducedMotion) return;
 
-    const split = new GsapSplitText(el, { type: "chars" });
+    // type: "words, chars" (not just "chars") wraps each word in its own
+    // span before splitting into characters — without the word-level
+    // wrapper, the browser can break a line between any two character
+    // spans, including mid-word. This was a real bug (title text splitting
+    // words across lines in production), not a styling nit.
+    const split = new GsapSplitText(el, { type: "words, chars" });
     const tween = gsap.from(split.chars, {
       yPercent: 110,
       opacity: 0,
