@@ -281,14 +281,30 @@ Two decisions were made explicitly (asked, not assumed) before implementing:
    environments.
 
 Implemented in `pr-checks.yml`'s "Deploy Vercel preview" step:
-`vercel deploy --prebuilt --env "DATABASE_URL=$PREVIEW_DATABASE_URL" --env "JWT_SECRET=$PREVIEW_JWT_SECRET"`,
-where `PREVIEW_DATABASE_URL` is `steps.neon.outputs.connection_uri` from the Neon
-provisioning step immediately above it, and `PREVIEW_JWT_SECRET` is the new secret
-(external prerequisite #9). A guard was added before deploying: if
-`steps.neon.outputs.connection_uri` is somehow empty, the step fails loudly instead of
-silently deploying a preview with no `DATABASE_URL`. The PR-comment text was updated from
-"No backend API is deployed yet" to reflect that previews now run against their own real,
-isolated Neon branch.
+`vercel deploy --prebuilt --env "DATABASE_URL=$PREVIEW_DATABASE_URL" --env "DATABASE_OWNER_URL=$PREVIEW_DATABASE_OWNER_URL" --env "JWT_SECRET=$PREVIEW_JWT_SECRET"`,
+where `PREVIEW_DATABASE_URL` is `steps.neon.outputs.connection_uri` and
+`PREVIEW_DATABASE_OWNER_URL` is `steps.neon.outputs.owner_connection_uri`, both from the
+Neon provisioning step immediately above it, and `PREVIEW_JWT_SECRET` is the new secret
+(external prerequisite #9). Guards were added before deploying: if either
+`steps.neon.outputs.connection_uri` or `steps.neon.outputs.owner_connection_uri` is
+somehow empty, the step fails loudly instead of silently deploying a broken preview. The
+PR-comment text was updated from "No backend API is deployed yet" to reflect that
+previews now run against their own real, isolated Neon branch.
+
+**Follow-up fix, found by actually logging into PR #14's own preview after opening it**
+(not just checking that CI was green): the first pass only wired `DATABASE_URL`, which
+covers every RLS-scoped tenant route. It missed `DATABASE_OWNER_URL` — the separate,
+RLS-bypassing connection string that `apps/frontend/lib/db/pool.ts`'s `getIdentityPool()`
+uses, and which only `POST /api/auth/login` calls, to resolve which tenant an email
+belongs to before any tenant is known (see that file's header comment for why the two
+pools have to be separate). Because nothing in `ci-checks` exercises a real login against
+a real preview deployment, this shipped past every automated check and only surfaced as
+a `500 {"error":"Internal error"}` when actually calling `POST /api/auth/login` by hand —
+the Vercel runtime logs for that deployment showed the real cause:
+`Error: DATABASE_OWNER_URL is not set.` `provision_pr_branch.mjs` already computed this
+owner URI (needed internally to apply `roles.sql`/seed data) but never exposed it as a
+step output; fixed by adding `writeOutput("owner_connection_uri", ownerUri)` there and
+wiring it through the same `-e/--env` mechanism as `DATABASE_URL`.
 
 Never paste `DATABASE_OWNER_URL`, `JWT_SECRET`, or any password into chat or into this
 file — only non-sensitive IDs (project/branch IDs, hostnames) are safe to share here.

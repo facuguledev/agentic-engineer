@@ -209,6 +209,12 @@ async function main() {
 
     writeOutput("branch_id", branchId);
     writeOutput("connection_uri", appUserUri);
+    // Owner-role URI, needed by the frontend's identityPool (DATABASE_OWNER_URL,
+    // see apps/frontend/lib/db/pool.ts) for the pre-tenant-known login lookup.
+    // Without this, POST /api/auth/login 500s on every preview deploy —
+    // discovered live on PR #14's preview after the app_user-only wiring in
+    // gap #10's first pass. RLS-bypass credential, always masked above.
+    writeOutput("owner_connection_uri", ownerUri);
 
     console.log(`\nBranch ${BRANCH_NAME} ready (id: ${branchId}).`);
   } catch (e) {
