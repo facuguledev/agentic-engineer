@@ -45,7 +45,7 @@ export function PulseHero() {
         <ol className="mt-4 flex flex-col gap-3">
           {timeline.map((step, i) => (
             <li key={step} className="flex items-center gap-3">
-              <span className="font-mono text-label" aria-hidden="true">
+              <span className="font-mono text-label text-accent" aria-hidden="true">
                 {String(i + 1).padStart(2, "0")}
               </span>
               <span className="font-grotesk text-body">{step}</span>

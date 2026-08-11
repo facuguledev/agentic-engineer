@@ -4,15 +4,14 @@ import type { Config } from "tailwindcss";
 // (supersedes docs/research/design-audit-noth-en.md; that file is historical
 // only and is NOT cited here per the ADR).
 //
-// OPEN ITEMS carried over from the ADR, not resolved by this config:
-//   1. Typeface: ADR leaves font family unresolved pending an explicit
-//      decision — this ships the neutral fallback stack named in the ADR.
-//   2. Accent color: ADR calls for "a single saturated interactive-only
-//      accent" but does not specify a hex value. `--accent` below is a
-//      PLACEHOLDER (electric orange) and ships with a code comment flag;
-//      per HARD CONSTRAINTS ("no color token without citation or explicit
-//      user override") this needs an explicit user decision before it's
-//      treated as final.
+// Both ADR-0001 open items are now resolved by explicit user decision
+// (2026-08-11):
+//   1. Typeface: Space Grotesk, loaded via next/font/google in app/layout.tsx
+//      as the --font-space-grotesk CSS variable. The system-ui stack below
+//      is kept only as the font-load-failure fallback, not the primary face.
+//   2. Accent color: #FF3B00 confirmed as final. Also expanded from
+//      "interactive/hover-only" to limited static use (numerals, dividers,
+//      one quote mark) per user request — still not a background/body color.
 export default {
   content: ["./app/**/*.{ts,tsx}", "./components/**/*.{ts,tsx}"],
   theme: {
@@ -20,13 +19,11 @@ export default {
       colors: {
         black: "#000000",
         white: "#FFFFFF",
-        // PLACEHOLDER — see file header. Not yet user-approved.
         accent: "#FF3B00",
       },
       fontFamily: {
-        // ADR-0001 open item: neutral variable grotesk stack pending an
-        // explicit typeface decision.
         grotesk: [
+          "var(--font-space-grotesk)",
           "ui-sans-serif",
           "system-ui",
           "-apple-system",
@@ -37,11 +34,13 @@ export default {
         mono: ["ui-monospace", "SFMono-Regular", "Menlo", "monospace"],
       },
       fontSize: {
-        // Fluid clamp-based oversized type per ADR-0001. Named by role, not
-        // a fixed numeric scale.
-        display: ["clamp(3rem, 4vw + 2rem, 9rem)", { lineHeight: "0.92", letterSpacing: "-0.02em" }],
-        h1: ["clamp(2.25rem, 2.5vw + 1.5rem, 5rem)", { lineHeight: "0.96", letterSpacing: "-0.01em" }],
-        h2: ["clamp(1.75rem, 1.5vw + 1.25rem, 3rem)", { lineHeight: "1.02" }],
+        // Fluid clamp-based type per ADR-0001, sizes reduced 2026-08-11 per
+        // explicit user request (originals topped out at 9rem/5rem/3rem —
+        // too dominant at desktop widths). Named by role, not a fixed
+        // numeric scale.
+        display: ["clamp(2.5rem, 2.5vw + 1.75rem, 4.5rem)", { lineHeight: "0.95", letterSpacing: "-0.02em" }],
+        h1: ["clamp(2rem, 1.75vw + 1.5rem, 3.5rem)", { lineHeight: "0.98", letterSpacing: "-0.01em" }],
+        h2: ["clamp(1.5rem, 1vw + 1.15rem, 2.25rem)", { lineHeight: "1.05" }],
         body: ["clamp(1rem, 0.3vw + 0.9rem, 1.25rem)", { lineHeight: "1.4" }],
         label: ["clamp(0.75rem, 0.15vw + 0.7rem, 0.875rem)", { lineHeight: "1.2", letterSpacing: "0.08em" }],
       },
