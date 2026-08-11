@@ -22,6 +22,8 @@ on:
       - "apps/backend/**"
       - "apps/frontend/**"
       - "contracts/api-specs/**"
+      - "infra/neon/**"
+      - ".github/workflows/pr-checks.yml"
 
 permissions:
   contents: read
@@ -175,6 +177,14 @@ jobs:
     name: Provision Neon branch + Vercel preview
     runs-on: ubuntu-latest
     needs: [validate-migration-integrity, ci-checks]
+    # AGENT_04 audit-2026-08-11-neon-branch-credential-rotation.md, Finding A:
+    # without this guard, a PR-close event runs this job (delete-then-recreate
+    # pr-<number>) concurrently with cleanup-preview-env's teardown, with no
+    # ordering between the two — race outcome is either wasted provisioning or
+    # a live, never-torn-down branch left behind for a closed PR. Cleanup only
+    # ever runs on 'closed' (see cleanup-preview-env's own `if:` below), so
+    # provisioning must explicitly skip it.
+    if: github.event.action != 'closed'
     environment: preview # preview-scoped secrets only, never production credentials
     steps:
       - name: Checkout
@@ -209,18 +219,59 @@ jobs:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
           VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
           VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+          PREVIEW_DATABASE_URL: ${{ steps.neon.outputs.connection_uri }}
+          PREVIEW_DATABASE_OWNER_URL: ${{ steps.neon.outputs.owner_connection_uri }}
+          PREVIEW_JWT_SECRET: ${{ secrets.PREVIEW_JWT_SECRET }} # REPLACE_ME: shared across all previews, see docs/ci-cd-required-secrets.md
+          PR_NUMBER: ${{ github.event.pull_request.number }} # AGENT_04 audit-2026-08-11-jwt-secret-blast-radius.md: binds JWTs to this PR, see lib/auth/session.ts
         run: |
           set -euo pipefail
-          # KNOWN GAP: no DATABASE_URL / backend API wiring here on purpose.
-          # apps/backend has no deployed API (schema/migrations only, no HTTP
-          # server) — the frontend's NEXT_PUBLIC_API_BASE_URL has nothing
-          # real to point at yet. This preview deploy is UI/a11y/layout
-          # review only; expect the app's own error states ("Failed to load
-          # tasks", etc.) to render, same limitation apps/frontend/scripts/
-          # axe-audit.mjs already documents for the same reason. The Neon
-          # branch created in the previous step (steps.neon.outputs.*) is
-          # provisioned but intentionally unused here until a real backend
-          # exists to hand its connection string to.
+          # Gap #10 fix: DATABASE_URL is this PR's own Neon branch connection
+          # string (fresh every push, since provision_pr_branch.mjs deletes
+          # and recreates the branch each time — matches its app_user
+          # password rotation). DATABASE_OWNER_URL is that same branch's
+          # owner-role connection string — required separately because
+          # apps/frontend/lib/db/pool.ts's getIdentityPool() (used only by
+          # POST /api/auth/login, to resolve which tenant an email belongs
+          # to before any tenant is known) connects via DATABASE_OWNER_URL,
+          # not DATABASE_URL. Missed on the first pass of this fix — PR #14's
+          # own preview 500'd on login with "DATABASE_OWNER_URL is not set"
+          # until this was added; see apps/frontend/lib/db/pool.ts's header
+          # comment for why the two pools are separate. JWT_SECRET remains
+          # one fixed value shared across every PR's previews (simpler than
+          # per-PR generation) — but AGENT_04's
+          # audit-2026-08-11-jwt-secret-blast-radius.md found the original
+          # "accepted low-stakes tradeoff" framing didn't account for
+          # seed_isolation_test.sql's identical fixed UUIDs across every
+          # branch, which turned a theoretical cross-preview signature match
+          # into a live cross-PR data-access path. Fixed by also passing
+          # PR_NUMBER below, which lib/auth/session.ts binds into every
+          # token at sign time and checks at verify time — closes the
+          # bypass without touching the shared-secret decision itself.
+          #
+          # Injected via `vercel deploy`'s own -e/--env flag (run-time env
+          # vars scoped to just this one deployment), not `vercel env add`
+          # or a local .env file. Two reasons: (1) DATABASE_URL/
+          # DATABASE_OWNER_URL change every push, so persisting them as
+          # Vercel-project-level Preview env vars would need add+remove
+          # every run anyway, with no benefit over passing them directly;
+          # (2) apps/frontend/lib/db/pool.ts and lib/auth/session.ts both
+          # read process.env lazily inside request handlers, not at module
+          # load or build time — so these values only need to exist in the
+          # deployed function's runtime env, which is exactly what -e/--env
+          # sets (confirmed via `vercel deploy --help` on the pinned 58.7.1
+          # CLI: "-e, --env <KEY=VALUE> Specify environment variables during
+          # run-time"). Writing to .vercel/.env.preview.local instead would
+          # only affect the local `vercel build` step in this CI runner, not
+          # the deployed serverless function — it would not actually work.
+          if [ -z "$PREVIEW_DATABASE_URL" ]; then
+            echo "::error::steps.neon.outputs.connection_uri is empty — the Neon branch step above should have produced this. Refusing to deploy a preview with no DATABASE_URL."
+            exit 1
+          fi
+          if [ -z "$PREVIEW_DATABASE_OWNER_URL" ]; then
+            echo "::error::steps.neon.outputs.owner_connection_uri is empty — the Neon branch step above should have produced this. Refusing to deploy a preview with no DATABASE_OWNER_URL (login would 500)."
+            exit 1
+          fi
+
           npx vercel@58.7.1 pull --yes --environment=preview --token="$VERCEL_TOKEN"
 
           # DIAGNOSTIC: pinpointing a persistent doubled-path bug
@@ -234,7 +285,11 @@ jobs:
           echo "::endgroup::"
 
           npx vercel@58.7.1 build --token="$VERCEL_TOKEN"
-          DEPLOYMENT_URL=$(npx vercel@58.7.1 deploy --prebuilt --token="$VERCEL_TOKEN")
+          DEPLOYMENT_URL=$(npx vercel@58.7.1 deploy --prebuilt --token="$VERCEL_TOKEN" \
+            --env "DATABASE_URL=$PREVIEW_DATABASE_URL" \
+            --env "DATABASE_OWNER_URL=$PREVIEW_DATABASE_OWNER_URL" \
+            --env "JWT_SECRET=$PREVIEW_JWT_SECRET" \
+            --env "PR_NUMBER=$PR_NUMBER")
           echo "url=$DEPLOYMENT_URL" >> "$GITHUB_OUTPUT"
 
       - name: Comment preview URL on PR
@@ -245,7 +300,7 @@ jobs:
             const body = [
               "**Preview deployment:** " + url,
               "",
-              "_No backend API is deployed yet — expect data-loading error states in this preview. UI/layout/a11y only._",
+              "_Backed by this PR's own Neon branch — real data, isolated from production and every other PR's preview._",
             ].join("\n");
             await github.rest.issues.createComment({
               owner: context.repo.owner,

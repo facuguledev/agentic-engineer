@@ -151,6 +151,7 @@ jobs:
     outputs:
       vercel-deployment-id: ${{ steps.deploy.outputs.deployment_id }}
       vercel-deployment-url: ${{ steps.deploy.outputs.url }}
+      production-url: ${{ steps.deploy.outputs.production_url }}
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
       - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
@@ -191,8 +192,32 @@ jobs:
           npx vercel@58.7.1 pull --yes --environment=production --token="$VERCEL_TOKEN"
           npx vercel@58.7.1 build --prod --token="$VERCEL_TOKEN"
           DEPLOYMENT_URL=$(npx vercel@58.7.1 deploy --prebuilt --prod --token="$VERCEL_TOKEN")
+          DEPLOYMENT_ID=$(basename "$DEPLOYMENT_URL")
           echo "url=$DEPLOYMENT_URL" >> "$GITHUB_OUTPUT"
-          echo "deployment_id=$(basename "$DEPLOYMENT_URL")" >> "$GITHUB_OUTPUT"
+          echo "deployment_id=$DEPLOYMENT_ID" >> "$GITHUB_OUTPUT"
+
+          # BUG FIX: `vercel deploy --prod` prints the unique per-deployment
+          # URL (e.g. https://<project>-<hash>-<team>.vercel.app), NOT the
+          # aliased production domain — even though this deploy did get
+          # promoted/aliased to production. That raw per-deployment URL has
+          # Vercel Deployment Protection (SSO) enabled, so any automated
+          # request to it either 401s (API calls) or 307-redirects to a
+          # Vercel login page (GET requests) — confirmed live: `curl -sf`
+          # against it in the health-check step "succeeded" while actually
+          # only following a redirect to the SSO page, never reaching
+          # apps/frontend/app/api/health/route.ts at all, and the
+          # authenticated smoke-test step got a hard 401 with a
+          # "Protected deployment" body instead of a real app response.
+          # Fix: resolve the actual alias this deployment was promoted to
+          # via the Vercel API and use THAT for all automated checks.
+          ALIAS_HOST=$(curl -sf -H "Authorization: Bearer $VERCEL_TOKEN" \
+            "https://api.vercel.com/v13/deployments/${DEPLOYMENT_ID}?teamId=${VERCEL_ORG_ID}" \
+            | node -e "const d=JSON.parse(require('fs').readFileSync(0,'utf8'));process.stdout.write((d.alias&&d.alias[0])||'');")
+          if [ -z "$ALIAS_HOST" ]; then
+            echo "::error::Deployment ${DEPLOYMENT_ID} has no alias — it was not actually promoted to a public production domain. Cannot run health-check/smoke-test against a Deployment-Protection-gated URL."
+            exit 1
+          fi
+          echo "production_url=https://${ALIAS_HOST}" >> "$GITHUB_OUTPUT"
 
   # ---------------------------------------------------------------------
   # 7. VERIFY_HEALTH — failure triggers artifact rollback (never automatic
@@ -216,25 +241,107 @@ jobs:
     if: always() && needs.deploy-artifact.result == 'success'
     environment: production
     steps:
+      - name: Assert Vercel Authentication is not silently re-enabled
+        # AGENT_04 static readiness audit (2026-08-11, "Deployment Protection
+        # state drift"): Deployment Protection is an out-of-repo Vercel
+        # dashboard setting, manually disabled once (Gap #12) with zero CI
+        # assertion anywhere that it stays disabled. A silent re-enable
+        # (manual toggle, team default change, project re-creation) would
+        # reproduce Gap #12 (blocks all real users) completely undetected,
+        # since the health-check below historically treated a 307-to-SSO
+        # redirect as a pass (see Gap #11). This step names the exact
+        # setting via Vercel's own REST API instead of inferring it from an
+        # HTTP status, so a regression points straight at Project Settings >
+        # Deployment Protection. Read-only GET, no state-changing call, no
+        # new secret — reuses VERCEL_TOKEN/VERCEL_ORG_ID/VERCEL_PROJECT_ID
+        # already present on this environment for deploy-artifact/rollback.
+        # Live baseline confirmed disabled (ssoProtection: null) manually
+        # via the Vercel dashboard before this assertion was added, so this
+        # is verified-safe against current real state, not a guess.
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+        run: |
+          set -euo pipefail
+          SSO=$(curl -sf --max-time 10 -H "Authorization: Bearer $VERCEL_TOKEN" \
+            "https://api.vercel.com/v9/projects/${VERCEL_PROJECT_ID}?teamId=${VERCEL_ORG_ID}" \
+            | node -pe "JSON.stringify(JSON.parse(require('fs').readFileSync(0,'utf8')).ssoProtection)")
+          if [ "$SSO" != "null" ]; then
+            echo "::error::Project ssoProtection is $SSO, expected null (disabled). This was deliberately disabled per Gap #12 — a non-null value means it was silently re-enabled (manual toggle, team default change, or project re-creation) and is blocking real users right now, same as before it was first caught. Check Project Settings > Deployment Protection."
+            exit 1
+          fi
+          echo "Vercel Authentication confirmed disabled (ssoProtection: null) — no regression of Gap #12."
+
       - name: Health-check endpoint
         env:
-          PROD_URL: ${{ needs.deploy-artifact.outputs.vercel-deployment-url }}
+          PROD_URL: ${{ needs.deploy-artifact.outputs.production-url }}
         run: |
           set -euo pipefail
           if [ -z "$PROD_URL" ]; then
             echo "::error::deploy-artifact produced no deployment URL — cannot health-check. Blocking."
             exit 1
           fi
-          # KNOWN GAP: apps/frontend has no /api/health route yet (no
-          # backend exists to check the health of either — see the
-          # provision-preview-env comment in pr-checks.yml for the same
-          # underlying gap). This will legitimately fail until that route
-          # is added, which is correct: a real failure, not a fake stub.
-          curl -sf --max-time 10 "$PROD_URL/api/health"
+          # AGENT_04 audit finding: bare `curl -sf` only treats HTTP >=400 as
+          # failure. A 3xx redirect (e.g. Deployment Protection's SSO login
+          # redirect) without -L is neither followed nor treated as an
+          # error, so this silently "passed" on every prior run without
+          # ever actually reaching the app (this exact mechanism is Gap
+          # #11). Asserting the literal status code closes that gap
+          # regardless of which protection method caused the redirect —
+          # complementary to, not redundant with, the ssoProtection API
+          # assertion above (that one names Vercel Authentication
+          # specifically; this one catches any 3xx/4xx cause generically).
+          HTTP_CODE=$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 "$PROD_URL/api/health")
+          if [ "$HTTP_CODE" != "200" ]; then
+            echo "::error::Health-check returned $HTTP_CODE, expected 200. If this is 307/401/403, Deployment Protection may have been silently re-enabled on the production scope (see Gap #12) — check Vercel Project Settings > Deployment Protection before assuming an application bug."
+            exit 1
+          fi
+
       - name: Authenticated smoke path (login + one tenant-scoped read)
+        env:
+          PROD_URL: ${{ needs.deploy-artifact.outputs.production-url }}
+          SMOKE_TEST_EMAIL: ${{ secrets.SMOKE_TEST_EMAIL }}
         run: |
-          echo "::error::No smoke-test credentials/fixture tenant exist yet, and no auth exists in the app to test against (no backend deployed — see DEPLOY_ARTIFACT's known-gap comment). REPLACE_ME with a dedicated read-only smoke-test account once both a real backend and auth exist."
-          exit 1
+          set -euo pipefail
+          if [ -z "$SMOKE_TEST_EMAIL" ]; then
+            echo "::error::SMOKE_TEST_EMAIL is not set on the production environment — cannot run the authenticated smoke path. Add it as an environment secret (see docs/ci-cd-required-secrets.md, external prerequisite #7)."
+            exit 1
+          fi
+
+          # Dedicated read-only smoke-test tenant/user, seeded once directly
+          # in production (see docs/ci-cd-required-secrets.md). Auth is
+          # deliberately email-only in v1 (see
+          # apps/frontend/app/api/auth/login/route.ts) — knowing this email
+          # is equivalent to a credential, which is why it lives in secrets,
+          # not vars.
+          COOKIE_JAR=$(mktemp)
+
+          LOGIN_STATUS=$(curl -s --max-time 10 -o /tmp/smoke-login-body.json -w '%{http_code}' \
+            -c "$COOKIE_JAR" \
+            -H 'Content-Type: application/json' \
+            -d "{\"email\":\"$SMOKE_TEST_EMAIL\"}" \
+            "$PROD_URL/api/auth/login")
+          if [ "$LOGIN_STATUS" != "200" ]; then
+            echo "::error::Smoke-test login returned $LOGIN_STATUS, expected 200. Body: $(cat /tmp/smoke-login-body.json)"
+            exit 1
+          fi
+
+          TENANT_STATUS=$(curl -s --max-time 10 -o /tmp/smoke-tenant-body.json -w '%{http_code}' \
+            -b "$COOKIE_JAR" \
+            "$PROD_URL/api/tenant")
+          if [ "$TENANT_STATUS" != "200" ]; then
+            echo "::error::Smoke-test tenant-scoped read returned $TENANT_STATUS, expected 200. Body: $(cat /tmp/smoke-tenant-body.json)"
+            exit 1
+          fi
+
+          TENANT_SLUG=$(node -pe "JSON.parse(require('fs').readFileSync('/tmp/smoke-tenant-body.json','utf8')).slug")
+          if [ "$TENANT_SLUG" != "ci-smoke-test" ]; then
+            echo "::error::Tenant-scoped read returned slug '$TENANT_SLUG', expected 'ci-smoke-test' — session/RLS tenant scoping may be broken."
+            exit 1
+          fi
+
+          echo "Authenticated smoke path passed: logged in as the smoke-test account, tenant-scoped read returned the correct tenant."
 
   rollback-on-failed-health:
     name: Roll back frontend deployment (artifact only, never schema)
