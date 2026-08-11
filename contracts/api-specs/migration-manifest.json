@@ -2,8 +2,10 @@
   "migrationVersion": "0001_init.sql",
   "migrationPath": "apps/backend/drizzle/0001_init.sql",
   "checksumAlgorithm": "sha256",
-  "checksum": "a3d8e7c27201c77b334213894c29b27dcb900d71c9014caa834caa974ecdd5fc",
+  "checksum": "e2ff5df0de5e47424cd2955ebc61a2ea35064f201bd89dde2ecbe895db36f2a7",
   "emittedBy": "AGENT_01",
   "emittedAt": "2026-08-04T00:00:00Z",
-  "note": "Backfilled: AGENT_01's original EMIT_CONTRACT run did not produce this manifest, per agents/agent-03-devops/system-prompt.md §MIGRATION INTEGRITY which requires it. Computed directly against 0001_init.sql as committed post-PENTEST_ISOLATION pass; the file has not been touched since. AGENT_03 must treat this as the independently-recorded value for VALIDATE_MIGRATION_INTEGRITY — do not regenerate it from the PR's copy of the migration."
+  "correctedBy": "AGENT_04 (static readiness audit, 2026-08-10) + AGENT_03 (verification and fix)",
+  "correctedAt": "2026-08-10T00:00:00Z",
+  "note": "Backfilled: AGENT_01's original EMIT_CONTRACT run did not produce this manifest, per agents/agent-03-devops/system-prompt.md §MIGRATION INTEGRITY which requires it. The originally backfilled checksum (a3d8e7c2...ecdd5fc) did not match sha256(apps/backend/drizzle/0001_init.sql) — verified via git history that the migration file has exactly one commit (451c3be, 2026-08-03 23:30:41) and has never been modified since, ruling out later drift/tampering as the cause; the original value was simply miscomputed at backfill time. Corrected to the actual sha256 of the unmodified file. AGENT_03 must treat this as the independently-recorded value for VALIDATE_MIGRATION_INTEGRITY — do not regenerate it from the PR's copy of the migration."
 }
