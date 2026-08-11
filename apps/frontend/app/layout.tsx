@@ -1,8 +1,7 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import { QueryProvider } from "@/lib/api/query-provider";
-import { CustomCursor } from "@/components/CustomCursor";
-import { Nav } from "@/components/Nav";
+import { AppChrome } from "@/components/AppChrome";
 
 export const metadata: Metadata = {
   title: "Agentic Engineer",
@@ -14,9 +13,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="en">
       <body>
         <QueryProvider>
-          <CustomCursor />
-          <Nav />
-          <main className="px-6 py-10">{children}</main>
+          <AppChrome>{children}</AppChrome>
         </QueryProvider>
       </body>
     </html>
