@@ -11,7 +11,7 @@ Frontend/UI engineer. Scope: Next.js App Router UI implementation only. Sole dat
 - Primitives: Radix UI / Ark UI (headless, a11y-compliant) — mandatory for all a11y-critical interactive components (dialog, dropdown, tooltip, combobox); no custom a11y implementation from scratch
 - Motion: GSAP + ScrollTrigger
 - Data layer: typed fetch hooks generated from `contracts/api-specs/*.ts`
-- Design reference: `docs/research/design-audit-noth-en.md` (canonical token + interaction source)
+- Design reference: `docs/decisions/0001-agent02-brutalist-design-pivot.md` (canonical token + interaction source). Supersedes `docs/research/design-audit-noth-en.md`, which is retained in the repo as historical record only — do not cite it in new work.
 
 ## DATA CONTRACT — NON-NEGOTIABLE
 
@@ -22,15 +22,16 @@ Frontend/UI engineer. Scope: Next.js App Router UI implementation only. Sole dat
 
 ## DESIGN SYSTEM RULES
 
-Every token cited below traces to `design-audit-noth-en.md` by section number. No token ships without a citation or an explicit user override.
+Every token cited below traces to ADR-0001 (`docs/decisions/0001-agent02-brutalist-design-pivot.md`) or its live implementation in `apps/frontend/tailwind.config.ts`. No token ships without one of those two citations or an explicit user override. `design-audit-noth-en.md` is superseded — its §-numbered tokens (soft monochrome, pill radius, low-motion ratio) MUST NOT be cited for new work; it stays in the repo as historical record only.
 
-- **Color** (§1): monochrome default — `#000`/`#FFF` primary, `#8E8E8E` secondary gray, `#141413` near-black accent. No saturated hue without explicit user approval.
-- **Typography** (§2): `PP Neue Montreal` (Pangram Pangram Foundry, commercial — flag licensing to user before build) + `IBM Plex Mono` for technical/numeric labels. Fluid type scale via `@media` breakpoint overrides, not a single fixed scale.
-- **Spacing** (§3): organic scale, not an 8pt grid — derive per-component from the audit's measured values, not an invented base unit.
-- **Radius** (§4): `100px`/`6.25rem` for pill components, `4px` for card/block components, `50%` for circular controls.
-- **Elevation** (§5): no `box-shadow`. Flat design — no Material-style elevation system.
-- **Motion** (§7): GSAP `ScrollTrigger`, `toggleActions`-driven single-fire entrance as default; `scrub` reserved for a minority of triggers (~15% ratio per reference). No `pin` without explicit justification — prefer CSS `position: sticky` for sticky-header patterns.
-- **Components** (§12): pill-system buttons (`border-radius: 100px`, uppercase, `font-weight: 500`) for primary/secondary actions; large-type borderless text-link pattern (no pill, no uppercase) reserved for "view all"/navigational secondary actions — the two patterns are not interchangeable.
+- **Color**: binary `#000`/`#FFF`, plus a single saturated interactive-only accent. The accent currently shipped in `tailwind.config.ts` (`#FF3B00`) is an explicit PLACEHOLDER, flagged in-file — not yet a user-approved token. Do not treat it as final; do not introduce a second accent hue without an explicit user decision.
+- **Typography**: fluid `clamp()`-based oversized type, named by role — not a fixed numeric scale, not `@media` breakpoint overrides. Use exactly the five roles defined in `tailwind.config.ts`: `display`, `h1`, `h2`, `h3`, `body`, `label` (each with its own clamp + line-height + letter-spacing). Font family: OPEN ITEM per ADR-0001 — no explicit typeface chosen yet; ships on the neutral `grotesk` fallback stack (`ui-sans-serif, system-ui, ...`) plus `mono` for technical/numeric labels. Do not introduce PP Neue Montreal or any other typeface without a follow-up user decision — the superseded system's commercial-license flag no longer applies because no typeface is fixed.
+- **Spacing**: not addressed by ADR-0001, and `tailwind.config.ts` ships no spacing override — Tailwind's default scale applies. Do not invent an "organic" per-component scale from the historical noth.in audit; that rule was dropped with the pivot.
+- **Radius**: zero across every interactive and structural component (`tailwind.config.ts`: `borderRadius.DEFAULT/none = 0px`). This replaces the superseded system's pill/card/circle radius rules outright — no pill buttons, no rounded cards.
+- **Elevation**: no `box-shadow`, full stop (`tailwind.config.ts`: `boxShadow.none = 'none'`). Unchanged from the superseded system.
+- **Grid**: symmetric 12-track grid (`grid-template-columns: repeat(12, minmax(0,1fr))`, `tailwind.config.ts`). Asymmetry is a placement property — express it via each component's `grid-column` span, never by redefining the track structure itself (ADR-0001 correction #1).
+- **Motion**: GSAP `SplitText` character-stagger reveal on primary headings, `power4.inOut` easing (free for commercial use since April 2025 — no licensing flag needed, ADR-0001 correction #2). `ScrollTrigger` `toggleActions`-driven single-fire entrance as default; `scrub` reserved for a minority of triggers (~15% ratio, unchanged from the historical reference). No `pin` without explicit justification — prefer CSS `position: sticky` for sticky-header patterns. Lerp-driven custom cursor tracking (`mix-blend-mode: difference`) scoped to `(pointer: fine)` only; never suppresses `:focus-visible`; skipped entirely under `prefers-reduced-motion` (ADR-0001 items 4–5) — this is a hard accessibility floor, not a nice-to-have.
+- **Components**: the superseded system's pill-button/text-link catalog (§12) is retracted along with the pill-radius rule (ADR-0001 correction #3) and has no direct replacement yet — any new interactive component must satisfy zero-radius + the accent-as-interactive-only-signal rule above, but a full component catalog for the brutalist system is an open item, not yet ratified.
 
 ## PIPELINE (state graph)
 
@@ -46,5 +47,5 @@ Every token cited below traces to `design-audit-noth-en.md` by section number. N
 - No endpoint/field usage outside `contracts/api-specs/`.
 - No auth/session/token/RLS/rate-limiting logic written by this agent.
 - No component ships without passing `VALIDATE_A11Y`.
-- No color/typography/spacing/motion token introduced without a `design-audit-noth-en.md` section citation or explicit user override.
+- No color/typography/spacing/motion token introduced without an ADR-0001 (or its `tailwind.config.ts` implementation) citation or explicit user override. `design-audit-noth-en.md` is historical only and MUST NOT be cited for new work (ADR-0001).
 - No production credentials in agent context.
