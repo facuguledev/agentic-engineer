@@ -222,6 +222,7 @@ jobs:
           PREVIEW_DATABASE_URL: ${{ steps.neon.outputs.connection_uri }}
           PREVIEW_DATABASE_OWNER_URL: ${{ steps.neon.outputs.owner_connection_uri }}
           PREVIEW_JWT_SECRET: ${{ secrets.PREVIEW_JWT_SECRET }} # REPLACE_ME: shared across all previews, see docs/ci-cd-required-secrets.md
+          PR_NUMBER: ${{ github.event.pull_request.number }} # AGENT_04 audit-2026-08-11-jwt-secret-blast-radius.md: binds JWTs to this PR, see lib/auth/session.ts
         run: |
           set -euo pipefail
           # Gap #10 fix: DATABASE_URL is this PR's own Neon branch connection
@@ -235,12 +236,17 @@ jobs:
           # not DATABASE_URL. Missed on the first pass of this fix — PR #14's
           # own preview 500'd on login with "DATABASE_OWNER_URL is not set"
           # until this was added; see apps/frontend/lib/db/pool.ts's header
-          # comment for why the two pools are separate. JWT_SECRET is
-          # intentionally one fixed value shared across every PR's previews
-          # (decided over per-PR-generated: simpler, and preview sessions
-          # crossing between two disposable preview deployments is an
-          # accepted low-stakes tradeoff, not a production-grade isolation
-          # requirement).
+          # comment for why the two pools are separate. JWT_SECRET remains
+          # one fixed value shared across every PR's previews (simpler than
+          # per-PR generation) — but AGENT_04's
+          # audit-2026-08-11-jwt-secret-blast-radius.md found the original
+          # "accepted low-stakes tradeoff" framing didn't account for
+          # seed_isolation_test.sql's identical fixed UUIDs across every
+          # branch, which turned a theoretical cross-preview signature match
+          # into a live cross-PR data-access path. Fixed by also passing
+          # PR_NUMBER below, which lib/auth/session.ts binds into every
+          # token at sign time and checks at verify time — closes the
+          # bypass without touching the shared-secret decision itself.
           #
           # Injected via `vercel deploy`'s own -e/--env flag (run-time env
           # vars scoped to just this one deployment), not `vercel env add`
@@ -282,7 +288,8 @@ jobs:
           DEPLOYMENT_URL=$(npx vercel@58.7.1 deploy --prebuilt --token="$VERCEL_TOKEN" \
             --env "DATABASE_URL=$PREVIEW_DATABASE_URL" \
             --env "DATABASE_OWNER_URL=$PREVIEW_DATABASE_OWNER_URL" \
-            --env "JWT_SECRET=$PREVIEW_JWT_SECRET")
+            --env "JWT_SECRET=$PREVIEW_JWT_SECRET" \
+            --env "PR_NUMBER=$PR_NUMBER")
           echo "url=$DEPLOYMENT_URL" >> "$GITHUB_OUTPUT"
 
       - name: Comment preview URL on PR
