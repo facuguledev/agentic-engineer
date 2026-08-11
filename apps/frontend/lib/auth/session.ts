@@ -30,8 +30,25 @@ function getSecretKey(): Uint8Array {
   return new TextEncoder().encode(secret);
 }
 
+// Every preview deployment shares one PREVIEW_JWT_SECRET (see
+// pr-checks.yml's "Deploy Vercel preview" step and docs/ci-cd-required-secrets.md's
+// Gap #10 rationale — a deliberate simplification, not an oversight). AGENT_04's
+// audit-2026-08-11-jwt-secret-blast-radius.md found this combines with
+// infra/neon/seed_isolation_test.sql's identical fixed tenant/user UUIDs across
+// every branch to produce a live cross-PR authentication bypass: a token minted
+// on one PR's preview verifies — and resolves to real matching rows — on any
+// other concurrently-open PR's preview. PR_NUMBER, injected alongside JWT_SECRET
+// at preview-deploy time (pr-checks.yml), binds every token to the PR that
+// minted it, closing the bypass without deriving a per-PR secret. Undefined in
+// production (no PR_NUMBER there), so both the claim and the check below are
+// no-ops outside of preview environments.
+function getPrNumber(): string | undefined {
+  return process.env.PR_NUMBER;
+}
+
 export async function createSessionCookie(payload: SessionPayload): Promise<void> {
-  const token = await new SignJWT(payload)
+  const prNumber = getPrNumber();
+  const token = await new SignJWT({ ...payload, ...(prNumber ? { prNumber } : {}) })
     .setProtectedHeader({ alg: ALG })
     .setIssuedAt()
     .setExpirationTime(`${MAX_AGE_SECONDS}s`)
@@ -74,6 +91,15 @@ export async function requireSession(): Promise<SessionPayload> {
   try {
     const { payload } = await jwtVerify(token, getSecretKey());
     if (typeof payload.sub !== "string" || typeof payload.tenantId !== "string") {
+      throw new UnauthenticatedError();
+    }
+    // Reject any token not minted for *this* PR's preview — closes the
+    // cross-PR forgery from the shared PREVIEW_JWT_SECRET (see
+    // createSessionCookie's comment above and
+    // docs/incidents/audit-2026-08-11-jwt-secret-blast-radius.md). No-op in
+    // production, where PR_NUMBER is never set.
+    const currentPrNumber = getPrNumber();
+    if (currentPrNumber && payload.prNumber !== currentPrNumber) {
       throw new UnauthenticatedError();
     }
     return { sub: payload.sub, tenantId: payload.tenantId as string, role: payload.role as "admin" | "member" };

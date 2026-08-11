@@ -309,6 +309,33 @@ wiring it through the same `-e/--env` mechanism as `DATABASE_URL`.
 Never paste `DATABASE_OWNER_URL`, `JWT_SECRET`, or any password into chat or into this
 file — only non-sensitive IDs (project/branch IDs, hostnames) are safe to share here.
 
+## Gap #14 fix — PREVIEW_JWT_SECRET cross-PR forgery (AGENT_04 audit)
+
+AGENT_04's `docs/incidents/audit-2026-08-11-jwt-secret-blast-radius.md` (verdict: FAIL,
+`HUMAN_ESCALATION_REQUIRED`) found that Gap #10's shared-`JWT_SECRET`-across-previews
+decision, combined with `infra/neon/seed_isolation_test.sql`'s identical fixed
+tenant/user UUIDs on every branch, produced a live cross-PR authentication bypass: a
+session token minted on one PR's preview verified — and resolved to real matching
+rows — on any other concurrently-open PR's preview. The original Gap #10 rationale had
+weighed the shared secret as a low-stakes tradeoff without accounting for the seed
+fixture's cross-branch collision.
+
+Two remediation approaches were possible: derive a per-PR secret (HMAC of
+`PREVIEW_JWT_SECRET` + `PR_NUMBER`), or bind tokens to their issuing PR via a claim,
+checked at verification time. Chose the claim-binding approach — it requires no change
+to secret management or CI wiring beyond passing the already-available `PR_NUMBER`
+through, whereas per-PR secret derivation would have added a second secret-derivation
+code path to reason about for no additional isolation benefit.
+
+Implemented in `apps/frontend/lib/auth/session.ts`: `createSessionCookie` reads
+`PR_NUMBER` (now passed via `pr-checks.yml`'s `vercel deploy --env "PR_NUMBER=$PR_NUMBER"`,
+sourced from `github.event.pull_request.number`, same pattern as the existing
+`DATABASE_URL`/`JWT_SECRET` injection) and includes it as a `prNumber` claim at sign
+time. `requireSession` rejects any token whose `prNumber` claim doesn't match the
+current deployment's own `PR_NUMBER`. Both the claim and the check are no-ops in
+production, where `PR_NUMBER` is never set — production's single-tenant-per-request
+model was never in scope for this finding, only cross-PR preview replay.
+
 ## Gap #13 fix — Deployment Protection state drift detection (AGENT_04 audit)
 
 AGENT_04's static readiness audit (2026-08-11, "Deployment Protection state drift")
