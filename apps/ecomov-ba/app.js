@@ -39,7 +39,7 @@
   var KIND_IC = { station: 'pedal_bike', place: 'location_on', street: 'signpost', me: 'my_location' };
   var VEH = {
     e: { name: 'E-bike', ic: 'electric_bike', code: 'EBIKE', num: '402', lane: 'Ciclovía Rápida (eléctricas)', share: 82 },
-    c: { name: 'Cargo', ic: 'local_shipping', code: 'CARGO', num: '118', lane: 'Ciclovía Lenta', share: 76 },
+    c: { name: 'Bici de carga', ic: 'pedal_bike', code: 'CARGO', num: '118', lane: 'Ciclovía Lenta', share: 76 },
     a: { name: 'Adaptada', ic: 'accessible', code: 'ADAPT', num: '031', lane: 'Ciclovía Lenta', share: 76 }
   };
 
@@ -212,9 +212,9 @@
   STATIONS.forEach(function (s) {
     var b = document.createElement('button');
     b.type = 'button'; b.className = 'pin'; b.style.left = s.x + 'px'; b.style.top = s.y + 'px';
-    b.setAttribute('aria-label', 'Estación ' + s.name + ': ' + s.e + ' E-bikes, ' + s.c + ' Cargo, ' + s.a + ' Adaptadas');
+    b.setAttribute('aria-label', 'Estación ' + s.name + ': ' + s.e + ' E-bikes, ' + s.c + ' bicis de carga, ' + s.a + ' Adaptadas');
     var part = function (n, ic) { return '<span class="' + (n ? '' : 'zero') + '"><span class="ms">' + ic + '</span>' + n + '</span>'; };
-    b.innerHTML = '<span class="bub">' + part(s.e, 'electric_bike') + part(s.c, 'local_shipping') + part(s.a, 'accessible') + '</span><span class="pin-head"></span><span class="pin-n num"></span>';
+    b.innerHTML = '<span class="bub">' + part(s.e, 'electric_bike') + part(s.c, 'pedal_bike') + part(s.a, 'accessible') + '</span><span class="pin-head"></span><span class="pin-n num"></span>';
     b.addEventListener('click', function () { if (moved) return; openSheet(s); });
     s.el = b; s.vis = false; world.appendChild(b);
   });
@@ -697,7 +697,7 @@
     { id: 'cafe', t: 'Café de especialidad', partner: 'Café La Esquina Solar', area: 'Villa Crespo', cat: 'gastro', cost: 60, ic: 'coffee', tag: 'Popular', feat: 'y', desc: 'Un café chico o mediano, con leche vegetal si querés. Llegás en bici y lo retirás en la barra.', conds: ['De lunes a viernes, de 8 a 12', 'Uno por persona por día'], kw: 'cafe desayuno' },
     { id: 'cine', t: '2x1 en entradas de cine', partner: 'Cine del Barrio', area: 'Palermo', cat: 'cultura', cost: 120, ic: 'movie', tag: 'Nuevo', feat: 'b', desc: 'Dos entradas por el precio de una para cualquier función de la semana. Tiene bicicletero en la puerta.', conds: ['De lunes a jueves', 'No incluye estrenos del fin de semana'], kw: 'pelicula entradas' },
     { id: 'service', t: 'Service completo de tu bici', partner: 'Bicicletería Rueda Libre', area: 'Almagro', cat: 'movilidad', cost: 120, was: 180, ic: 'build', tag: 'Oferta', feat: 'o', desc: 'Ajuste de frenos y cambios, lubricación de cadena y revisión de cubiertas. Para tu bici propia.', conds: ['Con turno previo', 'Repuestos aparte'], kw: 'bicicleta mecanico taller' },
-    { id: 'mensual', t: 'Pase mensual de E-bike al 50%', partner: 'ECOMOV BA', area: 'Toda la ciudad', cat: 'movilidad', cost: 600, ic: 'electric_bike', tag: 'Meta', feat: 'd', desc: 'Un mes de viajes ilimitados en E-bike, de hasta 60 minutos cada uno, a mitad de precio.', conds: ['Se activa el día que lo canjeás', 'Válido para E-bikes y Cargo'], kw: 'abono ebike bici' },
+    { id: 'mensual', t: 'Pase mensual de E-bike al 50%', partner: 'ECOMOV BA', area: 'Toda la ciudad', cat: 'movilidad', cost: 600, ic: 'electric_bike', tag: 'Meta', feat: 'd', desc: 'Un mes de viajes ilimitados en E-bike, de hasta 60 minutos cada uno, a mitad de precio.', conds: ['Se activa el día que lo canjeás', 'Válido para E-bikes y bicis de carga'], kw: 'abono ebike bici' },
     { id: 'almacen', t: '15% en Almacén Palermo', partner: 'Comercios del Barrio', area: 'Palermo', cat: 'barrio', cost: 150, ic: 'storefront', desc: 'Descuento en toda la compra en almacenes adheridos del barrio.', conds: ['Tope de descuento: una compra por semana'], kw: 'almacen supermercado compras' },
     { id: 'feria', t: '20% en la feria orgánica', partner: 'Feria de Productores', area: 'Parque Centenario', cat: 'barrio', cost: 110, ic: 'nutrition', desc: 'Descuento en frutas, verduras y productos de productores locales.', conds: ['Sábados de 9 a 14'], kw: 'verduras frutas organico' },
     { id: 'almuerzo', t: '25% en almuerzo saludable', partner: 'Cantina Verde', area: 'Microcentro', cat: 'gastro', cost: 130, ic: 'lunch_dining', desc: 'Menú del día con opción vegetariana, a un cuarto menos.', conds: ['De lunes a viernes, de 12 a 15'], kw: 'comida menu restaurante' },
