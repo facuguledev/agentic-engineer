@@ -1,0 +1,435 @@
+<!doctype html>
+<html lang="es-AR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>ECOMOV BA</title>
+<meta name="description" content="Movilidad de superficie en Buenos Aires: encontrá una estación, escaneá el QR del vehículo y pedaleá con onda verde.">
+<meta name="theme-color" content="#ffffff">
+<meta name="color-scheme" content="light">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="ECOMOV BA">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="preload" href="fonts/material-symbols-rounded.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<svg class="defs" aria-hidden="true" focusable="false">
+  <defs>
+    <pattern id="blocks" width="34" height="34" patternUnits="userSpaceOnUse" patternTransform="rotate(-8)">
+      <rect class="m-street" width="34" height="34"></rect>
+      <rect class="m-block" x="3" y="3" width="28" height="28" rx="3"></rect>
+    </pattern>
+    <g id="city">
+      <rect width="1000" height="1400" fill="url(#blocks)"></rect>
+      <path class="m-park" d="M250 0 L600 0 L640 260 L560 420 L420 420 L300 300 Z"></path>
+      <path class="m-park" d="M190 560 L250 590 L240 650 L180 630 Z"></path>
+      <rect class="m-park" x="40" y="930" width="90" height="80" rx="40"></rect>
+      <rect class="m-park" x="770" y="975" width="60" height="45" rx="10"></rect>
+      <rect class="m-park" x="860" y="1320" width="50" height="40" rx="6"></rect>
+      <path class="m-water" d="M600 0 L1000 0 L1000 1400 L960 1400 L930 1100 L880 900 L760 560 L640 260 Z"></path>
+      <g>
+        <path id="av-lib" class="m-case" d="M360 360 L620 640 L880 960"></path>
+        <path id="av-sf" class="m-case" d="M300 520 L540 760 L800 1010"></path>
+        <path id="av-cba" class="m-case" d="M100 660 L440 970 L780 1130"></path>
+        <path id="av-cor" class="m-case" d="M60 860 L400 1090 L740 1180 L920 1210"></path>
+        <path id="av-riv" class="m-case" d="M40 1250 L500 1270 L880 1350"></path>
+        <path id="av-9j" class="m-case" d="M820 960 L740 1180 L690 1400"></path>
+        <path id="av-cal" class="m-case" d="M470 1260 L620 1020 L780 860"></path>
+        <path id="av-pue" class="m-case" d="M330 1150 L470 960 L640 740"></path>
+        <path id="av-cdz" class="m-case" d="M200 860 L330 720 L460 600"></path>
+        <path id="av-sar" class="m-case" d="M300 520 L560 300"></path>
+        <path id="av-sca" class="m-case" d="M60 760 L220 600 L330 470"></path>
+      </g>
+      <g>
+        <path class="m-av" d="M360 360 L620 640 L880 960"></path>
+        <path class="m-av" d="M300 520 L540 760 L800 1010"></path>
+        <path class="m-av" d="M100 660 L440 970 L780 1130"></path>
+        <path class="m-av" d="M60 860 L400 1090 L740 1180 L920 1210"></path>
+        <path class="m-av" d="M40 1250 L500 1270 L880 1350"></path>
+        <path class="m-av" d="M820 960 L740 1180 L690 1400"></path>
+        <path class="m-av" d="M470 1260 L620 1020 L780 860"></path>
+        <path class="m-av" d="M330 1150 L470 960 L640 740"></path>
+        <path class="m-av" d="M200 860 L330 720 L460 600"></path>
+        <path class="m-av" d="M300 520 L560 300"></path>
+        <path class="m-av" d="M60 760 L220 600 L330 470"></path>
+      </g>
+      <g class="m-lbl">
+        <text dy="4"><textPath href="#av-lib" startOffset="30%">Av. del Libertador</textPath></text>
+        <text dy="4"><textPath href="#av-sf" startOffset="18%">Av. Santa Fe</textPath></text>
+        <text dy="4"><textPath href="#av-sf" startOffset="70%">Av. Santa Fe</textPath></text>
+        <text dy="4"><textPath href="#av-cba" startOffset="35%">Av. Córdoba</textPath></text>
+        <text dy="4"><textPath href="#av-cor" startOffset="20%">Av. Corrientes</textPath></text>
+        <text dy="4"><textPath href="#av-cor" startOffset="62%">Av. Corrientes</textPath></text>
+        <text dy="4"><textPath href="#av-riv" startOffset="30%">Av. Rivadavia</textPath></text>
+        <text dy="4"><textPath href="#av-9j" startOffset="58%">Av. 9 de Julio</textPath></text>
+        <text dy="4"><textPath href="#av-cal" startOffset="25%">Av. Callao</textPath></text>
+        <text dy="4"><textPath href="#av-pue" startOffset="10%">Av. Pueyrredón</textPath></text>
+        <text dy="4"><textPath href="#av-cdz" startOffset="15%">Av. Coronel Díaz</textPath></text>
+        <text dy="4"><textPath href="#av-sar" startOffset="30%">Av. Sarmiento</textPath></text>
+        <text dy="4"><textPath href="#av-sca" startOffset="10%">Av. Scalabrini Ortiz</textPath></text>
+      </g>
+      <text class="m-big" x="860" y="300" transform="rotate(58 860 300)">RÍO DE LA PLATA</text>
+      <text class="m-park-l" x="370" y="170">Bosques de Palermo</text>
+      <text class="m-park-l" x="40" y="1030">Parque Centenario</text>
+      <g class="m-poi">
+        <path d="M736 1158 L744 1158 L746 1186 L734 1186 Z" fill="#1d3343"></path>
+        <text x="690" y="1150">Obelisco</text>
+        <text x="300" y="542" text-anchor="middle">Plaza Italia</text>
+        <text x="500" y="1295" text-anchor="middle">Congreso</text>
+        <text x="885" y="1385" text-anchor="middle">Plaza de Mayo</text>
+      </g>
+    </g>
+  </defs>
+</svg>
+
+<main class="screen" id="scr" data-view="map" data-zone="ok">
+<!-- 1 · MAPA -->
+        <section class="view" id="v-map" aria-label="Mapa de estaciones">
+          <div class="map-vp" id="mapVp">
+            <div class="map-world" id="mapWorld">
+              <svg viewBox="0 0 1000 1400" aria-hidden="true"><use href="#city"></use></svg>
+              <div class="me" id="meDot" style="left:330px;top:560px" title="Tu ubicación"></div>
+            </div>
+            <div class="map-ui map-search">
+              <div class="search-box">
+                <span class="ms lead">search</span>
+                <input id="stSearch" type="text" placeholder="Buscá una estación o un lugar" autocomplete="off" role="combobox" aria-expanded="false" aria-controls="stAc" aria-autocomplete="list" aria-label="Buscar estación o lugar">
+                <ul class="ac" id="stAc" role="listbox" hidden></ul>
+              </div>
+              <div class="filters" role="group" aria-label="Filtrar por vehículo">
+                <button class="chip-f" type="button" data-f="all" aria-pressed="true">Todas</button>
+                <button class="chip-f" type="button" data-f="e" aria-pressed="false"><span class="ms">electric_bike</span>E-bike</button>
+                <button class="chip-f" type="button" data-f="c" aria-pressed="false"><span class="ms">local_shipping</span>Cargo</button>
+                <button class="chip-f" type="button" data-f="a" aria-pressed="false"><span class="ms">accessible</span>Adaptada</button>
+              </div>
+            </div>
+            <div class="map-ui map-fab">
+              <div class="zoom" role="group" aria-label="Zoom del mapa">
+                <button class="fab" type="button" id="zIn" aria-label="Acercar"><span class="ms">add</span></button>
+                <button class="fab" type="button" id="zOut" aria-label="Alejar"><span class="ms">remove</span></button>
+              </div>
+              <button class="fab" type="button" id="locBtn" aria-label="Centrar en mi ubicación"><span class="ms">my_location</span></button>
+            </div>
+            <div class="map-ui map-scan" id="mapScan"><button class="btn btn-primary" type="button" id="quickScan"><span class="ms">qr_code_scanner</span>ESCANEAR QR</button></div>
+            <div class="sheet map-ui" id="sheet" hidden role="dialog" aria-labelledby="shName">
+              <div class="handle"></div>
+              <div class="sheet-top">
+                <div class="st-ic"><span class="ms">solar_power</span></div>
+                <div style="flex:1;min-width:0"><div class="t" id="shName">Estación</div><div class="s" id="shAddr"></div></div>
+                <button class="icon-btn" type="button" id="shClose" aria-label="Cerrar"><span class="ms">close</span></button>
+              </div>
+              <div class="sheet-meta" id="shMeta"></div>
+              <div class="section"><h3>¿Qué vas a usar?</h3></div>
+              <div class="vehs" role="radiogroup" aria-label="Tipo de vehículo" id="vehs"></div>
+              <button class="btn btn-primary" type="button" id="toScan" disabled><span class="ms">qr_code_scanner</span>ELEGÍ UN VEHÍCULO</button>
+            </div>
+          </div>
+          <nav class="tabbar" aria-label="Navegación"><button class="tab on" type="button"><span class="ms">map</span>Mapa</button><button class="tab" type="button" data-go="wallet"><span class="ms">account_balance_wallet</span>Billetera</button><button class="tab" type="button" data-soon="Perfil"><span class="ms">person</span>Perfil</button></nav>
+        </section>
+
+        <!-- 2 · ESCANEAR -->
+        <section class="view" id="v-scan" hidden aria-label="Escanear QR">
+          <div class="scan-top">
+            <button class="icon-btn" type="button" id="scanBack" aria-label="Volver al mapa"><span class="ms">arrow_back</span></button>
+            <div class="t">Escaneá el QR<small id="scanSub">E-bike · Estación Plaza Italia</small></div>
+          </div>
+          <div class="cam">
+            <video id="video" playsinline muted hidden></video>
+            <div class="sim" id="sim" hidden>
+              <svg class="bar" viewBox="0 0 340 120" aria-hidden="true">
+                <path d="M-10 70 Q90 40 170 52 Q250 40 350 70" fill="none" stroke="#9aa9b2" stroke-width="16" stroke-linecap="round"></path>
+                <path d="M-10 70 Q90 40 170 52 Q250 40 350 70" fill="none" stroke="#c6d1d7" stroke-width="5" stroke-linecap="round" opacity=".6"></path>
+                <rect x="140" y="40" width="60" height="40" rx="10" fill="#2a3a44"></rect>
+              </svg>
+              <button class="sticker" type="button" id="simTap" aria-label="Simular la lectura del QR"><canvas id="simQr" width="29" height="29"></canvas><span id="simLbl">ECOMOV · #402</span></button>
+            </div>
+            <div class="finder" id="finder" aria-hidden="true"><i></i><i></i><i></i><i></i><span class="laser"></span></div>
+            <div class="cam-state"><span id="camState"><span class="ms">photo_camera</span>Pidiendo permiso para usar la cámara…</span></div>
+          </div>
+          <div class="scan-foot">
+            <p class="scan-msg" id="scanMsg">Apuntá al código QR del manubrio<small>Se lee solo, no hace falta tocar nada</small></p>
+            <div class="scan-err" id="scanErr" hidden><span class="ms">error</span><span id="scanErrTxt"></span></div>
+            <div class="scan-actions">
+              <button class="btn btn-dark btn-sm" type="button" id="torch" hidden><span class="ms">flashlight_on</span>Linterna</button>
+              <button class="btn btn-dark btn-sm" type="button" id="manualBtn"><span class="ms">keyboard</span>Ingresar número</button>
+              <button class="btn btn-dark btn-sm" type="button" id="demoBtn"><span class="ms">qr_code_2</span>QR de prueba</button>
+            </div>
+            <form class="manual" id="manualForm" hidden>
+              <input id="manualCode" type="text" inputmode="numeric" maxlength="4" placeholder="Ej.: 402" aria-label="Número del vehículo" autocomplete="off">
+              <button class="btn btn-success btn-sm" type="submit">Activar</button>
+            </form>
+          </div>
+        </section>
+
+        <!-- 2b · ACTIVADA -->
+        <section class="view" id="v-ok" hidden aria-label="Vehículo activado">
+          <div class="ok-wrap">
+            <div class="ok-ring"><span class="ms">check</span></div>
+            <h3 id="okTitle">E-bike #402 activada</h3>
+            <p id="okSub">Quedó a tu nombre. Ahora prepará el viaje y desbloqueala.</p>
+            <button class="btn btn-success" type="button" id="toPrep"><span class="ms">tune</span>PREPARAR VIAJE</button>
+          </div>
+        </section>
+
+        <!-- 3 · PREPARAR -->
+        <section class="view" id="v-prep" hidden aria-label="Preparar viaje">
+          <div class="app-head">
+            <div class="head-l"><button class="icon-btn" type="button" id="prepBack" aria-label="Volver al mapa"><span class="ms">arrow_back</span></button><div class="head-t">Preparar viaje<small>El tiempo de uso arranca al desbloquear</small></div></div>
+          </div>
+          <div class="scroll">
+            <div class="veh-chip">
+              <span class="ms" id="pvIc">electric_bike</span>
+              <div><div class="t" id="pvName">E-bike #402 · activada</div><div class="s" id="pvSt">Estación Plaza Italia · anclaje 7</div></div>
+              <div class="charge"><span class="num">84%</span><div class="bar"><i style="width:84%"></i></div></div>
+            </div>
+
+            <div class="route-form">
+              <div class="rf-line">
+                <span class="ms">trip_origin</span>
+                <div><label for="inOrig">Origen</label><input id="inOrig" type="text" autocomplete="off" role="combobox" aria-expanded="false" aria-controls="acOrig" aria-autocomplete="list" placeholder="¿Desde dónde salís?"></div>
+                <ul class="ac" id="acOrig" role="listbox" hidden></ul>
+              </div>
+              <div class="rf-line dest">
+                <span class="ms">location_on</span>
+                <div><label for="inDest">Destino</label><input id="inDest" type="text" autocomplete="off" role="combobox" aria-expanded="false" aria-controls="acDest" aria-autocomplete="list" placeholder="¿A dónde vas? Ej.: Obelisco"></div>
+                <ul class="ac" id="acDest" role="listbox" hidden></ul>
+              </div>
+            </div>
+
+            <div class="route-card" id="routeCard" hidden>
+              <div class="section"><h3>Tu recorrido</h3><span class="badge b-success"><span class="dot"></span>Onda Verde 18 km/h</span></div>
+              <div class="nums">
+                <div><b class="num" id="rcKm">5,4 km</b><span>Distancia</span></div>
+                <div><b class="num" id="rcMin">18 min</b><span>A 18 km/h</span></div>
+                <div><b class="num" id="rcPts">+20</b><span>Puntos estimados</span></div>
+              </div>
+              <div class="corte" aria-hidden="true" id="rcCorte"><div class="c-serv">Serv.</div><div class="c-rap">Rápida</div><div class="c-len">Lenta</div><div class="c-pea">Peatonal</div></div>
+              <div class="s" id="rcTxt"></div>
+            </div>
+
+            <div class="prefs">
+              <div class="pref"><span class="ms">volume_up</span><div><div class="t">Avisos por voz</div><div class="s">Maniobras, cruces y velocidad, en voz alta</div></div><input class="switch" type="checkbox" id="pVoice" checked aria-label="Avisos por voz"></div>
+              <div class="pref"><span class="ms">vibration</span><div><div class="t">Vibración</div><div class="s">Vibra antes de cada cruce o si te pasás de 20 km/h</div></div><input class="switch" type="checkbox" id="pVib" checked aria-label="Vibración"></div>
+              <div class="pref"><span class="ms">screen_lock_portrait</span><div><div class="t">Pantalla simple</div><div class="s">Mientras pedaleás, solo velocidad, maniobra y distancia</div></div><input class="switch" type="checkbox" id="pSimple" checked aria-label="Pantalla simple"></div>
+            </div>
+          </div>
+          <div class="cta-zone">
+            <p class="consent" id="unlockHint">Elegí el destino para desbloquear.</p>
+            <button class="btn btn-primary" type="button" id="unlock" disabled><span class="ms">lock_open</span>DESBLOQUEAR BICI</button>
+          </div>
+        </section>
+
+        <!-- 4 · PEDALEAR -->
+        <section class="view rm" id="v-ride" hidden aria-label="Viaje en curso">
+          <div class="rm-top">
+            <div class="rm-trip num"><b id="rmLeft">2,8 km</b> <span id="rmEta">· 9 min</span></div>
+            <div class="rm-time num"><span class="ms">timer</span><span id="rmTime">08:40</span></div>
+          </div>
+          <div class="rm-bar" aria-hidden="true"><i id="rmBar" style="width:48%"></i></div>
+          <div class="rm-next" aria-live="polite">
+            <span class="ms" id="rmNextIc">directions_walk</span>
+            <div><b class="num" id="rmNextDist">750 m</b><span class="txt" id="rmNextTxt">Cruce peatonal · Av. Callao</span></div>
+          </div>
+          <div class="rm-speed">
+            <div class="rm-num num" id="rmSpeed">18</div>
+            <div class="rm-unit">km/h</div>
+            <div class="rm-state" id="rmState"><span class="ms">eco</span>EN ONDA VERDE</div>
+            <div class="rm-sub" id="rmSub">Máximo 20 km/h</div>
+          </div>
+          <div class="rm-extra num" id="rmExtra" hidden>
+            <div><b id="rxPts">+9</b>puntos</div><div><b id="rxBat">84%</b>batería</div><div><b id="rxCo2">442 g</b>CO₂ evitado</div>
+          </div>
+          <div class="rm-foot">
+            <div class="rm-cues"><span class="ms" id="cueVoice">volume_up</span><span class="ms" id="cueVib">vibration</span><span id="cueTxt">Avisos por voz y vibración activos</span></div>
+            <button class="hold" id="hold" type="button" aria-label="Mantené presionado para pausar el viaje">
+              <svg viewBox="0 0 88 88" aria-hidden="true">
+                <circle cx="44" cy="44" r="40" fill="none" stroke="currentColor" stroke-width="4" opacity=".25"></circle>
+                <circle id="holdRing" cx="44" cy="44" r="40" fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-dasharray="251.3" stroke-dashoffset="251.3" transform="rotate(-90 44 44)"></circle>
+              </svg>
+              <span class="ms">pause</span>
+            </button>
+            <div class="rm-hint">Mantené para pausar</div>
+          </div>
+        </section>
+
+        <!-- 5 · PAUSA -->
+        <section class="view" id="v-pause" hidden aria-label="Viaje en pausa">
+          <div class="app-head">
+            <div class="head-l"><div class="brand-mark" style="background:var(--o-warning);color:var(--o-dark)"><span class="ms">pause</span></div><div class="head-t">Viaje en pausa<small id="paRoute">Plaza Italia → Obelisco</small></div></div>
+            <span class="badge b-warn"><span class="dot"></span>Detenido</span>
+          </div>
+          <div class="scroll">
+            <div class="pause-hero">
+              <div>
+                <div class="k">En pausa hace</div>
+                <div class="v num" id="paTimer">00:00</div>
+                <div class="s">El tiempo de uso sigue corriendo</div>
+              </div>
+              <div class="resv" aria-label="Tiempo de reserva de la bici">
+                <svg viewBox="0 0 76 76" aria-hidden="true"><circle cx="38" cy="38" r="33" fill="none" stroke="rgba(255,255,255,.15)" stroke-width="6"></circle><circle id="resvRing" cx="38" cy="38" r="33" fill="none" stroke="#ffdf97" stroke-width="6" stroke-linecap="round" stroke-dasharray="207.3" stroke-dashoffset="0"></circle></svg>
+                <div><b class="num" id="resvTxt">15:00</b><span>reservada</span></div>
+              </div>
+              <div class="lockrow"><span class="ms">lock</span><div><b>Candado electrónico activado</b>Nadie puede usar la bici mientras está en pausa.</div></div>
+            </div>
+
+            <div class="mini">
+              <svg id="paMap" viewBox="0 0 400 150" preserveAspectRatio="xMidYMid slice" aria-hidden="true"></svg>
+              <div class="mini-cap">
+                <div class="row"><span>Recorrido</span><b class="num" id="paKm">2,6 de 5,4 km</b></div>
+                <div class="bar"><i id="paBar" style="width:48%"></i></div>
+              </div>
+            </div>
+
+            <div class="stats">
+              <div class="stat"><span class="k">Tiempo de uso</span><span class="v num" id="stTime">08:40</span><span class="d">de 60 min del pase</span></div>
+              <div class="stat"><span class="k">Vel. media</span><span class="v num" id="stAvg">17,8</span><span class="d">km/h</span></div>
+              <div class="stat"><span class="k">Batería</span><span class="v num" id="stBat">83%</span><span class="d" id="stAuto">~33 km</span></div>
+              <div class="stat eco"><span class="k">Puntos</span><span class="v num" id="stPts">+9</span><span class="d">hasta ahora</span></div>
+              <div class="stat eco"><span class="k">CO₂ evitado</span><span class="v num" id="stCo2">442 g</span><span class="d">vs. auto</span></div>
+              <div class="stat"><span class="k">Falta</span><span class="v num" id="stLeft">2,8 km</span><span class="d" id="stEta">~9 min</span></div>
+            </div>
+
+            <div class="section"><h3>¿Qué querés hacer?</h3></div>
+            <div class="acts">
+              <details class="act" id="actDest">
+                <summary><span class="ms">alt_route</span><div><div class="t">Cambiar destino</div><div class="s" id="actDestS">Ahora: Obelisco</div></div><span class="ms chev">chevron_right</span></summary>
+                <div class="act-body">
+                  <div class="small-input">
+                    <input id="inNewDest" type="text" autocomplete="off" role="combobox" aria-expanded="false" aria-controls="acNew" aria-autocomplete="list" placeholder="Escribí el nuevo destino" aria-label="Nuevo destino">
+                    <ul class="ac" id="acNew" role="listbox" hidden></ul>
+                  </div>
+                  <span class="hint">El recorrido se recalcula desde donde estás.</span>
+                </div>
+              </details>
+              <details class="act" id="actDock">
+                <summary><span class="ms">local_parking</span><div><div class="t">Estaciones para anclar cerca</div><div class="s" id="actDockS">La más cercana a 300 m</div></div><span class="ms chev">chevron_right</span></summary>
+                <div class="act-body" id="nearList"></div>
+              </details>
+              <details class="act" id="actProb">
+                <summary><span class="ms">build</span><div><div class="t">Reportar un problema</div><div class="s">Pinchadura, frenos, batería…</div></div><span class="ms chev">chevron_right</span></summary>
+                <div class="act-body">
+                  <div class="probs" role="radiogroup" aria-label="Tipo de problema">
+                    <label><input type="radio" name="prob" value="Pinchadura" id="pr1"><span>Pinchadura</span></label>
+                    <label><input type="radio" name="prob" value="Frenos" id="pr2"><span>Frenos</span></label>
+                    <label><input type="radio" name="prob" value="Batería" id="pr3"><span>Batería</span></label>
+                    <label><input type="radio" name="prob" value="Cadena" id="pr4"><span>Cadena</span></label>
+                    <label><input type="radio" name="prob" value="Otro" id="pr5"><span>Otro</span></label>
+                  </div>
+                  <button class="btn btn-outline btn-sm" type="button" id="probSend" disabled>Enviar reporte</button>
+                  <div class="ok-msg" id="probOk" hidden><span class="ms">check_circle</span><span id="probOkTxt"></span></div>
+                </div>
+              </details>
+              <details class="act sos">
+                <summary><span class="ms">emergency</span><div><div class="t">Emergencias</div><div class="s">SAME y Policía de la Ciudad</div></div><span class="ms chev">chevron_right</span></summary>
+                <div class="act-body">
+                  <div class="sos-nums"><div><b>107</b><span>SAME · emergencias médicas</span></div><div><b>911</b><span>Policía</span></div></div>
+                  <span class="hint">Si llamás desde la app, el operador recibe tu ubicación.</span>
+                </div>
+              </details>
+            </div>
+            <div class="confirm" id="finConfirm" hidden>
+              <span id="finTxt"></span>
+              <div class="two"><button class="btn btn-outline btn-sm" type="button" id="finGo">Ir a la estación</button><button class="btn btn-success btn-sm" type="button" id="finOk">Ya anclé, finalizar</button></div>
+            </div>
+          </div>
+          <div class="cta-zone cta-pause">
+            <button class="btn btn-primary" type="button" id="resume"><span class="ms">play_arrow</span>SEGUIR VIAJE</button>
+            <button class="btn btn-ghost btn-sm" type="button" id="finish"><span class="ms">stop_circle</span>Finalizar viaje</button>
+          </div>
+        </section>
+
+        <!-- 5b · LLEGADA -->
+        <section class="view" id="v-arrive" hidden aria-label="Llegada">
+          <div class="scroll" style="padding-top:12px">
+            <div class="arr-hero">
+              <span class="ms big">flag</span>
+              <h3 id="arTitle">Llegaste a Obelisco</h3>
+              <div class="arr-pts num" id="arPts">+20 puntos</div>
+              <p id="arSub">5,4 km en 18 min · 918 g de CO₂ evitado</p>
+            </div>
+            <div class="dock">
+              <div class="st-ic"><span class="ms">solar_power</span></div>
+              <div><div class="t" id="arDock">Estación Obelisco · 9 de Julio</div><div class="s" id="arDockS">4 anclajes libres a 30 m.</div></div>
+            </div>
+            <div class="stats">
+              <div class="stat"><span class="k">Tiempo de uso</span><span class="v num" id="arTime">18:00</span></div>
+              <div class="stat"><span class="k">Vel. media</span><span class="v num" id="arAvg">17,9</span></div>
+              <div class="stat"><span class="k">En onda verde</span><span class="v num">91%</span></div>
+            </div>
+          </div>
+          <div class="cta-zone">
+            <button class="btn btn-success" type="button" id="arFinish"><span class="ms">lock</span>ANCLÉ LA BICI · FINALIZAR</button>
+          </div>
+        </section>
+
+        <!-- 6 · BILLETERA -->
+        <section class="view" id="v-wallet" hidden aria-label="Billetera">
+          <div class="app-head">
+            <div class="head-l"><div class="brand-mark"><span class="ms">account_balance_wallet</span></div><div class="head-t">Billetera<small>Eco-bonos y beneficios</small></div></div>
+            <button class="icon-btn" type="button" aria-label="Historial de puntos"><span class="ms">history</span></button>
+          </div>
+          <div class="scroll" id="wScroll">
+            <div class="bal">
+              <span class="ms leaf" aria-hidden="true">eco</span>
+              <div class="k">Tenés</div>
+              <div class="v num"><span data-points>408</span><small> puntos</small></div>
+              <div class="s num">Equivalen a <span id="kgTotal">18,4</span> kg de CO₂ que no fueron al aire</div>
+              <div class="lvl">
+                <div class="row"><span>Nivel <b id="lvlName">Activo</b></span><span class="num" id="lvlNext">Faltan 92 para Comprometido</span></div>
+                <div class="bar"><i id="lvlBar" style="width:80%"></i></div>
+              </div>
+              <span class="gain num" id="gain" hidden></span>
+            </div>
+
+            <div class="search-box w-search">
+              <span class="ms lead">search</span>
+              <input id="cSearch" type="search" placeholder="Buscá un canje: café, cine, bici…" autocomplete="off" aria-label="Buscar canjes" aria-controls="cList">
+            </div>
+            <div class="filters cats" role="group" aria-label="Categorías de canjes" id="cats"></div>
+
+            <div id="featWrap" class="feat">
+              <div class="section"><h3>Ofertas destacadas</h3>
+                <div class="car-nav"><button type="button" id="carPrev" aria-label="Oferta anterior"><span class="ms">chevron_left</span></button><button type="button" id="carNext" aria-label="Oferta siguiente"><span class="ms">chevron_right</span></button></div>
+              </div>
+              <div class="car" id="car" aria-roledescription="carrusel" aria-label="Ofertas destacadas"></div>
+              <div class="dots" id="dots" role="group" aria-label="Elegir oferta destacada"></div>
+            </div>
+
+            <div class="section"><h3 id="cTitle">Canjes disponibles</h3><span class="cnt num" id="cCount"></span></div>
+            <div class="clist" id="cList" aria-live="polite"></div>
+
+            <div class="section"><h3>Mis pases</h3><span class="cnt num" id="pCount"></span></div>
+            <div class="passes" id="passes"></div>
+
+            <details class="how">
+              <summary><span class="ms">calculate</span>¿Cómo sumo puntos?<span class="ms chev">chevron_right</span></summary>
+              <div class="formula num">
+                <span>1 km pedaleado evita</span><b>170 g CO₂</b>
+                <span>1 punto equivale a</span><b>45 g CO₂</b>
+                <span>Ejemplo: Plaza Italia → Obelisco</span><b>5,4 km = 20 puntos</b>
+              </div>
+            </details>
+            <div class="city">
+              <div class="t"><span class="ms">public</span>Ahorro total BA</div>
+              <div><span class="big num">1.284 t</span> <span class="s">CO₂ evitado este mes</span></div>
+              <div class="s">Tu aporte se junta con el de la ciudad para el mercado de carbono.</div>
+            </div>
+          </div>
+          <div class="scrim" id="wScrim" hidden></div>
+          <div class="sheet wsheet" id="wSheet" hidden role="dialog" aria-modal="true" aria-labelledby="wsTitle"></div>
+          <nav class="tabbar" aria-label="Navegación"><button class="tab" type="button" data-go="map"><span class="ms">map</span>Mapa</button><button class="tab on" type="button"><span class="ms">account_balance_wallet</span>Billetera</button><button class="tab" type="button" data-soon="Perfil"><span class="ms">person</span>Perfil</button></nav>
+        </section>
+
+<div class="toast" id="toast" hidden role="status"><span class="ms" id="toastIc">check_circle</span><span id="toastTxt"></span></div>
+</main>
+
+<script src="vendor/qrcode.js"></script>
+<script src="vendor/jsQR.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

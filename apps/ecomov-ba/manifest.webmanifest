@@ -1,0 +1,18 @@
+{
+  "name": "ECOMOV BA",
+  "short_name": "ECOMOV",
+  "description": "Movilidad de superficie en Buenos Aires: encontrá una estación, escaneá el QR del vehículo y pedaleá con onda verde.",
+  "lang": "es-AR",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#00642f",
+  "theme_color": "#ffffff",
+  "categories": ["navigation", "travel"],
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
