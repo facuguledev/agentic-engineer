@@ -13,12 +13,12 @@
     { name: 'Planetario', addr: 'Av. Sarmiento y Figueroa Alcorta', x: 480, y: 280, e: 5, c: 1, a: 0, d: 4 },
     { name: 'Facultad de Derecho', addr: 'Av. Figueroa Alcorta 2263', x: 660, y: 560, e: 6, c: 2, a: 1, d: 3 },
     { name: 'Plaza Güemes', addr: 'Medrano y Mansilla', x: 390, y: 720, e: 2, c: 1, a: 0, d: 10 },
-    { name: 'Recoleta', addr: 'Junín y Vicente López', x: 630, y: 760, e: 9, c: 1, a: 2, d: 2 },
+    { name: 'Recoleta', addr: 'Junín y Vicente López', x: 630, y: 760, e: 9, c: 1, a: 2, d: 0 },
     { name: 'Barrio Norte', addr: 'Av. Pueyrredón 1500', x: 500, y: 890, e: 4, c: 0, a: 1, d: 7 },
     { name: 'Hospital de Clínicas', addr: 'Av. Córdoba 2351', x: 360, y: 1000, e: 1, c: 1, a: 0, d: 12 },
     { name: 'Plaza San Martín', addr: 'Florida y Av. Santa Fe', x: 800, y: 1010, e: 7, c: 2, a: 1, d: 5 },
     { name: 'Congreso', addr: 'Av. Rivadavia 1800', x: 520, y: 1240, e: 5, c: 1, a: 1, d: 8 },
-    { name: 'Obelisco · 9 de Julio', addr: 'Av. 9 de Julio y Corrientes', x: 770, y: 1210, e: 10, c: 3, a: 2, d: 4 },
+    { name: 'Obelisco · 9 de Julio', addr: 'Av. 9 de Julio y Corrientes', x: 770, y: 1210, e: 10, c: 3, a: 2, d: 0 },
     { name: 'Parque Centenario', addr: 'Av. Díaz Vélez 4800', x: 85, y: 1060, e: 6, c: 0, a: 1, d: 6 },
     { name: 'Palermo Soho', addr: 'Plaza Serrano', x: 120, y: 470, e: 4, c: 1, a: 0, d: 3 },
     { name: 'Plaza de Mayo', addr: 'Hipólito Yrigoyen y Bolívar', x: 870, y: 1320, e: 3, c: 1, a: 1, d: 9 },
@@ -103,6 +103,14 @@
   function dist(a, b) { return Math.hypot(a.x - b.x, a.y - b.y); }
   function nearestStations(p, n) { return STATIONS.slice().sort(function (a, b) { return dist(a, p) - dist(b, p); }).slice(0, n || 3); }
   function mtxt(px) { var m = px * KM_PER_PX * 1000; return m < 1000 ? Math.max(10, Math.round(m / 10) * 10) + ' m' : fmt(m / 1000, 1) + ' km'; }
+  /* Estación más cercana a p. Si está llena, `alt` es la más cercana que sí tiene anclajes libres. */
+  function dockInfo(p) {
+    var near = nearestStations(p, 1)[0], full = near.d === 0, alt = near;
+    if (full) {
+      alt = STATIONS.filter(function (s) { return s.d > 0; }).sort(function (a, b) { return dist(a, p) - dist(b, p); })[0] || null;
+    }
+    return { near: near, full: full, alt: alt };
+  }
   function stationPlace(s) { for (var i = 0; i < PLACES.length; i++) if (PLACES[i].st === s) return PLACES[i]; return PLACES[0]; }
   var tripPts = function (km) { return Math.floor(km * G_PER_KM / G_PER_PT); };
 
@@ -352,7 +360,7 @@
     $('sheet').hidden = false; $('mapScan').hidden = true;
     $('shName').textContent = 'Estación ' + s.name;
     $('shAddr').textContent = s.addr + ' · a ' + mtxt(dist(s, USER)) + ' de vos';
-    $('shMeta').innerHTML = '<span class="badge b-info"><span class="ms">solar_power</span>Solar · batería 100%</span><span class="badge b-default"><span class="ms">local_parking</span>' + s.d + ' anclajes libres</span>';
+    $('shMeta').innerHTML = '<span class="badge b-info"><span class="ms">solar_power</span>Solar · batería 100%</span>' + (s.d ? '<span class="badge b-default"><span class="ms">local_parking</span>' + s.d + ' anclajes libres</span>' : '<span class="badge b-warn"><span class="ms">local_parking</span>Estación llena</span>');
     var html = '';
     ['e', 'c', 'a'].forEach(function (k) {
       var n = s[k];
@@ -572,7 +580,11 @@
     var zone = renderRide();
     if (zone === 'over' && !S.wasOver) { say('Bajá a veinte para seguir en onda verde.'); buzz([300]); }
     S.wasOver = zone === 'over';
-    if (S.km >= S.route.km) { S.speed = 0; say('Llegaste. Anclá la bici para finalizar.'); buzz([200, 100, 200, 100, 200]); go('arrive'); }
+    if (S.km >= S.route.km) {
+      S.speed = 0; var di = dockInfo(S.route.d);
+      say(di.full && di.alt ? 'Llegaste, pero la estación ' + di.near.name + ' está llena. Te llevo a ' + di.alt.name + '.' : 'Llegaste. Anclá la bici para finalizar.');
+      buzz([200, 100, 200, 100, 200]); go('arrive');
+    }
   }, reduce ? 2000 : 1000);
 
   var HOLD_MS = 700, C = 251.3, holdStart = 0, holdRaf = 0, ring = $('holdRing'), holdBtn = $('hold');
@@ -621,10 +633,10 @@
     $('stPts').textContent = '+' + tripPts(km); $('stCo2').textContent = fmt(Math.round(km * G_PER_KM)) + ' g';
     $('stLeft').textContent = fmt(left, 1) + ' km'; $('stEta').textContent = '~' + Math.max(1, Math.round(left / 18 * 60)) + ' min';
     $('actDestS').textContent = 'Ahora: ' + r.d.label;
-    var p = curPos(), near = nearestStations(p, 3);
-    $('actDockS').textContent = 'La más cercana: ' + near[0].name + ', a ' + mtxt(dist(near[0], p));
+    var p = curPos(), near = nearestStations(p, 3), di = dockInfo(p), best = di.alt || near[0];
+    $('actDockS').textContent = (di.full ? 'Con lugar, la más cercana: ' : 'La más cercana: ') + best.name + ', a ' + mtxt(dist(best, p));
     $('nearList').innerHTML = near.map(function (s) {
-      return '<div class="near"><div><div class="t">' + esc(s.name) + '</div><div class="s">' + mtxt(dist(s, p)) + ' · ' + s.d + ' anclajes libres</div></div><button class="btn btn-outline btn-sm" type="button" data-near="' + STATIONS.indexOf(s) + '">Ir</button></div>';
+      return '<div class="near"><div><div class="t">' + esc(s.name) + '</div><div class="s">' + mtxt(dist(s, p)) + ' · ' + (s.d ? s.d + ' anclajes libres' : 'llena, sin anclajes libres') + '</div></div><button class="btn btn-outline btn-sm" type="button" data-near="' + STATIONS.indexOf(s) + '"' + (s.d ? '' : ' disabled') + '>' + (s.d ? 'Ir' : 'Llena') + '</button></div>';
     }).join('');
     $('nearList').querySelectorAll('[data-near]').forEach(function (b) { b.addEventListener('click', function () { rerouteTo(stationPlace(STATIONS[+b.dataset.near])); }); });
     $('finConfirm').hidden = true; $('probOk').hidden = true;
@@ -657,8 +669,10 @@
   });
   $('resume').addEventListener('click', function () { go('ride'); say('Seguimos. Faltan ' + fmt(Math.max(0, S.route.km - S.km), 1) + ' kilómetros.'); });
   $('finish').addEventListener('click', function () {
-    var p = curPos(), s = nearestStations(p, 1)[0];
-    $('finTxt').innerHTML = 'Para finalizar, anclá la bici en una estación. La más cercana es <b>' + esc(s.name) + '</b>, a ' + mtxt(dist(s, p)) + ', con ' + s.d + ' anclajes libres.';
+    var p = curPos(), di = dockInfo(p), s = di.alt || di.near;
+    $('finTxt').innerHTML = di.full && di.alt
+      ? 'La estación más cercana, <b>' + esc(di.near.name) + '</b>, está llena. Anclá la bici en <b>' + esc(s.name) + '</b>, a ' + mtxt(dist(s, p)) + ', con ' + s.d + ' anclajes libres.'
+      : 'Para finalizar, anclá la bici en una estación. La más cercana es <b>' + esc(s.name) + '</b>, a ' + mtxt(dist(s, p)) + ', con ' + s.d + ' anclajes libres.';
     $('finConfirm').hidden = false; $('finConfirm').dataset.st = STATIONS.indexOf(s);
     $('finConfirm').scrollIntoView({ block: 'nearest', behavior: reduce ? 'auto' : 'smooth' });
   });
@@ -667,16 +681,31 @@
 
   /* ---------- llegada y fin ---------- */
   function renderArrive() {
-    var km = S.kmPrev + S.km, s = nearestStations(S.route.d, 1)[0];
+    var km = S.kmPrev + S.km, di = dockInfo(S.route.d), s = di.near, redirect = di.full && !!di.alt;
     $('arTitle').textContent = 'Llegaste a ' + short(S.route.d.label);
     $('arPts').textContent = '+' + tripPts(km) + ' puntos';
     $('arSub').textContent = fmt(km, 1) + ' km en ' + Math.max(1, Math.round(S.simSec / 60)) + ' min · ' + fmt(Math.round(km * G_PER_KM)) + ' g de CO₂ evitado';
-    $('arDock').textContent = 'Estación ' + s.name;
-    $('arDockS').textContent = s.d + ' anclajes libres a ' + mtxt(dist(s, S.route.d)) + '. Empujá la bici en el anclaje hasta que se encienda la luz verde.';
+    $('arFull').hidden = !redirect; $('arGo').hidden = !redirect; $('arFinish').hidden = redirect;
+    if (redirect) {
+      $('arFullT').textContent = 'La estación ' + s.name + ' está llena';
+      $('arFullS').textContent = 'La más cercana con anclajes libres es ' + di.alt.name + ', a ' + mtxt(dist(di.alt, S.route.d)) + ' (' + di.alt.d + ' libres). La bici sigue a tu nombre hasta que la ancles.';
+      $('arDock').textContent = 'Estación ' + di.alt.name;
+      $('arDockS').textContent = di.alt.d + ' anclajes libres a ' + mtxt(dist(di.alt, S.route.d)) + ' de acá.';
+    } else {
+      $('arDock').textContent = 'Estación ' + s.name;
+      $('arDockS').textContent = s.d + ' anclajes libres a ' + mtxt(dist(s, S.route.d)) + '. Empujá la bici en el anclaje hasta que se encienda la luz verde.';
+    }
     $('arTime').textContent = mmss(S.simSec);
     $('arAvg').textContent = S.simSec ? fmt(km / (S.simSec / 3600), 1) : '0';
   }
   $('arFinish').addEventListener('click', finishTrip);
+  $('arGo').addEventListener('click', function () {
+    var di = dockInfo(S.route.d); if (!di.alt) return;
+    var st = stationPlace(di.alt);
+    rerouteTo(st); go('ride');
+    toast('Nuevo destino: ' + di.alt.name + ' · ' + fmt(S.route.km, 1) + ' km', 'alt_route');
+    say('Seguimos hasta ' + di.alt.name + '. Hay ' + di.alt.d + ' anclajes libres.');
+  });
   function finishTrip() {
     var km = S.kmPrev + S.km, p = tripPts(km);
     S.points += p; S.lastKm = km; S.lastPts = p; save();

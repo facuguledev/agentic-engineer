@@ -23,6 +23,7 @@ python3 -m http.server 8080      # o cualquier servidor estático
 - La pantalla no se apaga durante el viaje (Wake Lock, donde el navegador lo soporte).
 - Puntos y pases canjeados se guardan en el dispositivo (`localStorage`).
 - Botón **QR de prueba** en el escáner, para recorrer el flujo sin un QR físico.
+- Si la estación más cercana está llena al terminar el viaje (al llegar o desde *Finalizar viaje* en la pausa), la app te lleva a la más cercana con anclajes libres. En los datos de ejemplo están llenas Obelisco y Recoleta.
 - La pestaña *Perfil* todavía no existe en el diseño: avisa "llega en la próxima versión".
 
 ## Sigue siendo un prototipo
