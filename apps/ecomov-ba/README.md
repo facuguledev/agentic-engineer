@@ -24,6 +24,7 @@ python3 -m http.server 8080      # o cualquier servidor estático
 - Puntos y pases canjeados se guardan en el dispositivo (`localStorage`).
 - Botón **QR de prueba** en el escáner, para recorrer el flujo sin un QR físico.
 - Si la estación más cercana está llena al terminar el viaje (al llegar o desde *Finalizar viaje* en la pausa), la app te lleva a la más cercana con anclajes libres. En los datos de ejemplo están llenas Obelisco y Recoleta.
+- La ocupación cambia en vivo mientras pedaleás (simulado: cada 5 s alguien retira o deja una bici, con más movimiento en la estación del destino). Si la estación de tu destino se llena o se libera, lo ves en un cartel en la pantalla de viaje y te avisa por voz y vibración. Los pines del mapa se actualizan.
 - La pestaña *Perfil* todavía no existe en el diseño: avisa "llega en la próxima versión".
 
 ## Sigue siendo un prototipo

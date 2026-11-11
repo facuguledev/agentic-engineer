@@ -217,12 +217,14 @@
 
   /* ---------- 1 · mapa ---------- */
   var vp = $('mapVp'), world = $('mapWorld'), pan = { x: 0, y: 0 }, W = 1000, H = 1400;
+  function bubPart(n, ic) { return '<span class="' + (n ? '' : 'zero') + '"><span class="ms">' + ic + '</span>' + n + '</span>'; }
+  function bubInner(s) { return bubPart(s.e, 'electric_bike') + bubPart(s.c, 'pedal_bike') + bubPart(s.a, 'accessible'); }
+  function pinLabel(s) { return 'Estación ' + s.name + ': ' + s.e + ' E-bikes, ' + s.c + ' bicis de carga, ' + s.a + ' Adaptadas' + (s.d ? '' : ', llena'); }
   STATIONS.forEach(function (s) {
     var b = document.createElement('button');
     b.type = 'button'; b.className = 'pin'; b.style.left = s.x + 'px'; b.style.top = s.y + 'px';
-    b.setAttribute('aria-label', 'Estación ' + s.name + ': ' + s.e + ' E-bikes, ' + s.c + ' bicis de carga, ' + s.a + ' Adaptadas');
-    var part = function (n, ic) { return '<span class="' + (n ? '' : 'zero') + '"><span class="ms">' + ic + '</span>' + n + '</span>'; };
-    b.innerHTML = '<span class="bub">' + part(s.e, 'electric_bike') + part(s.c, 'pedal_bike') + part(s.a, 'accessible') + '</span><span class="pin-head"></span><span class="pin-n num"></span>';
+    b.setAttribute('aria-label', pinLabel(s));
+    b.innerHTML = '<span class="bub">' + bubInner(s) + '</span><span class="pin-head"></span><span class="pin-n num"></span>';
     b.addEventListener('click', function () { if (moved) return; openSheet(s); });
     s.el = b; s.vis = false; world.appendChild(b);
   });
@@ -527,7 +529,7 @@
   var tick = 0;
   function startTrip(km0) {
     S.route = buildRoute(S.origin, S.dest); S.km = km0 || 0; S.kmPrev = 0; S.simSec = S.km / 18 * 3600; S.speed = 0;
-    S.charge = 84; S.announced = {}; S.wasOver = false; tick = 0;
+    S.charge = 84; S.announced = {}; S.wasOver = false; tick = 0; dockReset(true);
   }
   $('unlock').addEventListener('click', function () {
     if (!S.origin || !S.dest) return;
@@ -554,6 +556,7 @@
     $('rmEta').textContent = '· ' + Math.max(1, Math.round(left / 18 * 60)) + ' min';
     $('rmTime').textContent = mmss(S.simSec);
     $('rmBar').style.width = (f * 100) + '%';
+    renderDockBanner();
     $('rmNextIc').textContent = nm.m.ic; $('rmNextDist').textContent = fmtD(d); $('rmNextTxt').textContent = nm.m.txt;
     var st = zone === 'cross' ? ['directions_walk', 'CRUCE PEATONAL', 'Bajá a 10 km/h, el peatón tiene prioridad']
       : zone === 'over' ? ['speed', 'BAJÁ UN POCO', 'Pasaste los 20 km/h de la onda verde']
@@ -567,6 +570,54 @@
     $('cueTxt').textContent = S.prefs.voice && S.prefs.vib ? 'Avisos por voz y vibración activos' : S.prefs.voice ? 'Avisos por voz activos' : S.prefs.vib ? 'Avisos por vibración activos' : 'Avisos desactivados';
     return zone;
   }
+  /* ---------- disponibilidad en vivo ---------- */
+  /* Cada 5 s alguien retira o deja una bici en alguna estación; la del destino cambia más seguido. */
+  function liveDocks() {
+    var dn = nearestStations(S.route.d, 1)[0];
+    var s = Math.random() < 0.6 ? dn : STATIONS[Math.floor(Math.random() * STATIONS.length)];
+    var frees = s.d === 0 ? Math.random() < 0.7 : s.d <= 2 ? Math.random() < 0.45 : Math.random() < 0.5;
+    var ks = ['e', 'c', 'a'];
+    if (frees) {                       /* alguien retira una bici: se libera un anclaje */
+      var avail = ks.filter(function (k) { return s[k] > 0; });
+      if (!avail.length) return;
+      var k = avail[Math.floor(Math.random() * avail.length)]; s[k]--; s.d++;
+    } else {                           /* alguien ancla una bici: se ocupa un anclaje */
+      if (s.d === 0) return;
+      s[ks[Math.floor(Math.random() * ks.length)]]++; s.d--;
+    }
+    s.el.querySelector('.bub').innerHTML = bubInner(s);
+    s.el.setAttribute('aria-label', pinLabel(s));
+    renderPins();
+  }
+  /* Avisa cuando cambia la situación de la estación de tu destino (voz, vibración y cartel en pantalla). */
+  function dockKey(di) { return di.full && di.alt ? 'full:' + di.near.name + '>' + di.alt.name : 'ok'; }
+  /* Fija el estado de partida. Si el destino ya está lleno al salir, se avisa en cuanto termina el saludo del desbloqueo. */
+  function dockReset(sayIfFull) {
+    S.dockKey = dockKey(dockInfo(S.route.d)); S.dockNote = null; S.dockSay = !!sayIfFull && S.dockKey !== 'ok';
+  }
+  function dockWatch() {
+    var di = dockInfo(S.route.d), key = dockKey(di), prev = S.dockKey;
+    if (key === prev) {
+      if (S.dockSay && tick >= 6) { S.dockSay = false; say('La estación ' + di.near.name + ' está llena. Al llegar te llevo a ' + di.alt.name + '.'); buzz([150, 80, 150]); }
+      return;
+    }
+    S.dockKey = key; S.dockSay = false;
+    if (key === 'ok') {
+      S.dockNote = { t: 'Se liberó lugar en ' + di.near.name, left: 8 };
+      say('Se liberó un anclaje en ' + di.near.name + '. Seguimos al destino.'); buzz([100]);
+    } else {
+      say(prev.indexOf('full') === 0 ? 'Ahora la estación con lugar es ' + di.alt.name + '.'
+        : 'La estación ' + di.near.name + ' se llenó. Al llegar te llevo a ' + di.alt.name + '.');
+      buzz([150, 80, 150]);
+    }
+  }
+  function renderDockBanner() {
+    var di = dockInfo(S.route.d), txt = '';
+    if (di.full && di.alt) txt = di.near.name + ' está llena · al llegar vamos a ' + di.alt.name;
+    else if (S.dockNote) txt = S.dockNote.t;
+    $('rmDock').hidden = !txt; $('rmDockT').textContent = txt;
+  }
+
   setInterval(function () {
     if (S.view !== 'ride' || !S.route) return;
     tick++;
@@ -577,6 +628,9 @@
     S.simSec += SPEEDUP; S.charge = Math.max(0, S.charge - 0.03);
     if (nm.m.walk && d < 0.2 && !S.announced[nm.i]) { S.announced[nm.i] = 1; say('Cruce peatonal en ' + Math.max(10, Math.round(d * 100) * 10) + ' metros. Bajá a diez.'); buzz(); }
     if (!nm.m.walk && nm.m.ic !== 'flag' && d < 0.15 && !S.announced[nm.i]) { S.announced[nm.i] = 1; say(nm.m.txt.replace(' · ', ', por ')); buzz([100]); }
+    if (tick >= 5 && tick % 5 === 0) liveDocks();
+    if (S.dockNote && --S.dockNote.left <= 0) S.dockNote = null;
+    dockWatch();
     var zone = renderRide();
     if (zone === 'over' && !S.wasOver) { say('Bajá a veinte para seguir en onda verde.'); buzz([300]); }
     S.wasOver = zone === 'over';
@@ -654,7 +708,7 @@
     S.kmPrev += S.km;
     var keep = S.simSec;
     S.route = buildRoute({ label: 'Tu ubicación', sub: '', x: here.x, y: here.y, kind: 'me' }, p);
-    S.km = 0; S.simSec = keep; S.announced = {}; S.dest = p;
+    S.km = 0; S.simSec = keep; S.announced = {}; S.dest = p; dockReset(false);
     $('inNewDest').value = '';
     document.querySelectorAll('.act').forEach(function (d) { d.open = false; });
     enterPause();
